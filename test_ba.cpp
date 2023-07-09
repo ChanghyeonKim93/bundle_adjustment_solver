@@ -13,6 +13,8 @@
 
 #include "core/bundle_adjustment_solver.h"
 
+#include "core/simd_library.h"
+
 using Numeric = float;
 bool in_image(const ba_solver::_BA_Pixel &pixel, const int n_cols, const int n_rows)
 {
@@ -102,6 +104,8 @@ void GetStereoInstrinsicAndExtrinsic(ba_solver::_BA_Camera &camera_left, ba_solv
 
 int main()
 {
+  simd::PointWarper pw;
+
   const int num_fixed_poses = 5;
   const float std_pixel_error = 0.5;
   const float point_error_level = 0.5;
