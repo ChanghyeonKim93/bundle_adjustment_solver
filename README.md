@@ -1,8 +1,8 @@
-# bundle_adjustment
+# bundle_adjustment_solver
 ### Usage
 ```
-git clone "https://github.com/ChanghyeonKim93/bundle_adjustment"
-cd bundle_adjustment
+git clone "https://github.com/ChanghyeonKim93/bundle_adjustment_solver"
+cd bundle_adjustment_solver
 mkdir build
 cd build
 cmake ..
