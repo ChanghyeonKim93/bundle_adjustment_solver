@@ -10,7 +10,7 @@ make -j4
 ```
 
 ### Brief usage
-```
+```c++
 // Make solver object
 analytic_solver::FullBundleAdjustmentSolver ba_solver;
 
