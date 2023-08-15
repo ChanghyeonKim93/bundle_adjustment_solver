@@ -1,7 +1,7 @@
-#include "bundle_adjustment_solver.h"
+#include "full_bundle_adjustment_solver.h"
 namespace ba_solver
 {
-  BundleAdjustmentSolver::BundleAdjustmentSolver()
+  FullBundleAdjustmentSolver::FullBundleAdjustmentSolver()
   {
     N_ = 0;
     M_ = 0;
@@ -16,24 +16,24 @@ namespace ba_solver
     num_cameras_ = 0;
     camera_list_.reserve(10);
 
-    original_pose_to_T_jw_map_.reserve(1000);
-    fixed_original_pose_set_.reserve(1000);
-    original_pose_to_j_opt_map_.reserve(1000);
-    j_opt_to_original_pose_map_.reserve(1000);
-    reserved_opt_poses_.reserve(1000);
+    original_pose_to_T_jw_map_.reserve(500);
+    fixed_original_pose_set_.reserve(500);
+    original_pose_to_j_opt_map_.reserve(500);
+    j_opt_to_original_pose_map_.reserve(500);
+    reserved_opt_poses_.reserve(500);
 
-    original_point_to_Xi_map_.reserve(50000);
-    fixed_original_point_set_.reserve(50000);
-    original_point_to_i_opt_map_.reserve(50000);
-    i_opt_to_original_point_map_.reserve(50000);
-    reserved_opt_points_.reserve(50000);
+    original_point_to_Xi_map_.reserve(100000);
+    fixed_original_point_set_.reserve(100000);
+    original_point_to_i_opt_map_.reserve(100000);
+    i_opt_to_original_point_map_.reserve(100000);
+    reserved_opt_points_.reserve(100000);
 
     observation_list_.reserve(2000000);
 
-    A_.reserve(1000); // reserve expected # of optimizable poses (N_opt)
-    B_.reserve(1000); //
-    Bt_.reserve(50000);
-    C_.reserve(50000); // reserve expected # of optimizable landmarks (M_opt)
+    A_.reserve(500); // reserve expected # of optimizable poses (N_opt)
+    B_.reserve(500); //
+    Bt_.reserve(100000);
+    C_.reserve(100000); // reserve expected # of optimizable landmarks (M_opt)
 
     scaler_ = 0.01;
     inverse_scaler_ = 1.0 / scaler_;
@@ -41,7 +41,7 @@ namespace ba_solver
     std::cout << "SparseBundleAdjustmentSolver() - initialize.\n";
   }
 
-  void BundleAdjustmentSolver::Reset()
+  void FullBundleAdjustmentSolver::Reset()
   {
     camera_list_.resize(0);
     N_ = 0;
@@ -71,7 +71,7 @@ namespace ba_solver
     // TODO(@)
   }
 
-  void BundleAdjustmentSolver::AddCamera(const _BA_Camera &camera)
+  void FullBundleAdjustmentSolver::AddCamera(const _BA_Camera &camera)
   {
     auto camera_scaled = camera;
     camera_scaled.pose_cam0_to_this.translation() *= scaler_;
@@ -88,7 +88,7 @@ namespace ba_solver
               << camera_scaled.pose_cam0_to_this.translation().transpose() << "\n";
   }
 
-  void BundleAdjustmentSolver::AddPose(_BA_Pose *original_pose)
+  void FullBundleAdjustmentSolver::AddPose(_BA_Pose *original_pose)
   {
     if (is_parameter_finalized_)
     {
@@ -106,7 +106,7 @@ namespace ba_solver
     }
   }
 
-  void BundleAdjustmentSolver::AddPoint(_BA_Point *original_point)
+  void FullBundleAdjustmentSolver::AddPoint(_BA_Point *original_point)
   {
     if (is_parameter_finalized_)
     {
@@ -123,7 +123,7 @@ namespace ba_solver
     }
   }
 
-  void BundleAdjustmentSolver::MakePoseFixed(_BA_Pose *original_poseptr)
+  void FullBundleAdjustmentSolver::MakePoseFixed(_BA_Pose *original_poseptr)
   {
     if (is_parameter_finalized_)
     {
@@ -143,7 +143,7 @@ namespace ba_solver
     ++N_fixed_;
   }
 
-  void BundleAdjustmentSolver::MakePointFixed(_BA_Point *original_pointptr_to_be_fixed)
+  void FullBundleAdjustmentSolver::MakePointFixed(_BA_Point *original_pointptr_to_be_fixed)
   {
     if (is_parameter_finalized_)
     {
@@ -164,7 +164,7 @@ namespace ba_solver
     ++M_fixed_;
   }
 
-  void BundleAdjustmentSolver::AddObservation(
+  void FullBundleAdjustmentSolver::AddObservation(
       const _BA_Index index_camera,
       _BA_Pose *related_pose, _BA_Point *related_point,
       const _BA_Pixel &pixel)
@@ -195,7 +195,7 @@ namespace ba_solver
     ++num_observation_;
   }
 
-  void BundleAdjustmentSolver::FinalizeParameters()
+  void FullBundleAdjustmentSolver::FinalizeParameters()
   {
     N_optimize_ = 0;
     for (auto &[original_pose, T_jw] : original_pose_to_T_jw_map_)
@@ -224,7 +224,7 @@ namespace ba_solver
     is_parameter_finalized_ = true;
   }
 
-  std::string BundleAdjustmentSolver::GetSolverStatistics() const
+  std::string FullBundleAdjustmentSolver::GetSolverStatistics() const
   {
     std::stringstream ss;
     std::cout << "| Bundle Adjustment Statistics:" << std::endl;
@@ -244,9 +244,9 @@ namespace ba_solver
     return ss.str();
   }
 
-  BundleAdjustmentSolver::~BundleAdjustmentSolver() {}
+  FullBundleAdjustmentSolver::~FullBundleAdjustmentSolver() {}
 
-  void BundleAdjustmentSolver::SetProblemSize()
+  void FullBundleAdjustmentSolver::SetProblemSize()
   {
     // Resize storages.
     A_.resize(N_optimize_, _BA_Mat66::Zero());
@@ -304,7 +304,7 @@ namespace ba_solver
     x_mat_.setZero();
   }
 
-  void BundleAdjustmentSolver::CheckPoseAndPointConnectivity()
+  void FullBundleAdjustmentSolver::CheckPoseAndPointConnectivity()
   {
     for (size_t j_opt = 0; j_opt < j_opt_to_all_point_.size(); ++j_opt)
     {
@@ -336,7 +336,7 @@ namespace ba_solver
     }
   }
 
-  void BundleAdjustmentSolver::ZeroizeStorageMatrices()
+  void FullBundleAdjustmentSolver::ZeroizeStorageMatrices()
   {
     // std::cout << "in zeroize \n";
     for (_BA_Index j = 0; j < N_optimize_; ++j)
@@ -379,7 +379,7 @@ namespace ba_solver
     // std::cout << "zeroize done\n";
   }
 
-  double BundleAdjustmentSolver::EvaluateCurrentError()
+  double FullBundleAdjustmentSolver::EvaluateCurrentError()
   {
     // Evaluate residual only
     _BA_Index cnt = 0;
@@ -433,7 +433,7 @@ namespace ba_solver
     return error_current;
   }
 
-  double BundleAdjustmentSolver::EvaluateErrorChangeByQuadraticModel()
+  double FullBundleAdjustmentSolver::EvaluateErrorChangeByQuadraticModel()
   {
     _BA_Numeric estimated_error_change = 0.0;
     for (_BA_Index j_opt = 0; j_opt < N_optimize_; ++j_opt)
@@ -456,7 +456,7 @@ namespace ba_solver
     return -estimated_error_change;
   }
 
-  void BundleAdjustmentSolver::ReserveCurrentParameters()
+  void FullBundleAdjustmentSolver::ReserveCurrentParameters()
   {
 
     for (_BA_Index j_opt = 0; j_opt < N_optimize_; ++j_opt)
@@ -473,7 +473,7 @@ namespace ba_solver
       reserved_opt_points_[i_opt] = Xi;
     }
   }
-  void BundleAdjustmentSolver::RevertToReservedParameters()
+  void FullBundleAdjustmentSolver::RevertToReservedParameters()
   {
     for (_BA_Index j_opt = 0; j_opt < N_optimize_; ++j_opt)
     {
@@ -490,8 +490,8 @@ namespace ba_solver
     }
   }
 
-  void BundleAdjustmentSolver::UpdateParameters(const std::vector<_BA_Vec6> &x_list,
-                                                const std::vector<_BA_Vec3> &y_list)
+  void FullBundleAdjustmentSolver::UpdateParameters(const std::vector<_BA_Vec6> &x_list,
+                                                    const std::vector<_BA_Vec3> &y_list)
   {
     // Update step
     for (_BA_Index j_opt = 0; j_opt < N_optimize_; ++j_opt)
@@ -512,8 +512,8 @@ namespace ba_solver
   }
 
   // For fast calculations for symmetric matrices
-  inline void BundleAdjustmentSolver::CalcRijtRij(const _BA_Mat23 &Rij,
-                                                  _BA_Mat33 &Rij_t_Rij)
+  inline void FullBundleAdjustmentSolver::CalcRijtRij(const _BA_Mat23 &Rij,
+                                                      _BA_Mat33 &Rij_t_Rij)
   {
     Rij_t_Rij.setZero();
 
@@ -535,8 +535,8 @@ namespace ba_solver
     // Rij_t_Rij(2, 1) = Rij_t_Rij(1, 2);
   }
 
-  inline void BundleAdjustmentSolver::CalcRijtRijweight(const _BA_Numeric weight, const _BA_Mat23 &Rij,
-                                                        _BA_Mat33 &Rij_t_Rij)
+  inline void FullBundleAdjustmentSolver::CalcRijtRijweight(const _BA_Numeric weight, const _BA_Mat23 &Rij,
+                                                            _BA_Mat33 &Rij_t_Rij)
   {
     Rij_t_Rij.setZero();
 
@@ -558,8 +558,8 @@ namespace ba_solver
     // Rij_t_Rij(2, 1) = Rij_t_Rij(1, 2);
   }
 
-  inline void BundleAdjustmentSolver::CalcQijtQij(const _BA_Mat26 &Qij,
-                                                  _BA_Mat66 &Qij_t_Qij)
+  inline void FullBundleAdjustmentSolver::CalcQijtQij(const _BA_Mat26 &Qij,
+                                                      _BA_Mat66 &Qij_t_Qij)
   {
     Qij_t_Qij.setZero();
 
@@ -644,8 +644,8 @@ namespace ba_solver
     // Qij_t_Qij(5, 4) = Qij_t_Qij(4, 5);
   }
 
-  inline void BundleAdjustmentSolver::CalcQijtQijweight(const _BA_Numeric weight, const _BA_Mat26 &Qij,
-                                                        _BA_Mat66 &Qij_t_Qij)
+  inline void FullBundleAdjustmentSolver::CalcQijtQijweight(const _BA_Numeric weight, const _BA_Mat26 &Qij,
+                                                            _BA_Mat66 &Qij_t_Qij)
   {
     Qij_t_Qij.setZero();
 
@@ -732,7 +732,7 @@ namespace ba_solver
     // Qij_t_Qij(5, 4) = Qij_t_Qij(4, 5);
   }
 
-  inline void BundleAdjustmentSolver::AddUpperTriangle(_BA_Mat33 &C, _BA_Mat33 &Rij_t_Rij_upper)
+  inline void FullBundleAdjustmentSolver::AddUpperTriangle(_BA_Mat33 &C, _BA_Mat33 &Rij_t_Rij_upper)
   {
     C(0, 0) += Rij_t_Rij_upper(0, 0);
     C(0, 1) += Rij_t_Rij_upper(0, 1);
@@ -744,7 +744,7 @@ namespace ba_solver
     C(2, 2) += Rij_t_Rij_upper(2, 2);
   }
 
-  inline void BundleAdjustmentSolver::AddUpperTriangle(_BA_Mat66 &A, _BA_Mat66 &Qij_t_Qij_upper)
+  inline void FullBundleAdjustmentSolver::AddUpperTriangle(_BA_Mat66 &A, _BA_Mat66 &Qij_t_Qij_upper)
   {
     A(0, 0) += Qij_t_Qij_upper(0, 0);
     A(0, 1) += Qij_t_Qij_upper(0, 1);
@@ -774,14 +774,14 @@ namespace ba_solver
     A(5, 5) += Qij_t_Qij_upper(5, 5);
   }
 
-  inline void BundleAdjustmentSolver::FillLowerTriangle(_BA_Mat33 &C)
+  inline void FullBundleAdjustmentSolver::FillLowerTriangle(_BA_Mat33 &C)
   {
     C(1, 0) = C(0, 1);
     C(2, 0) = C(0, 2);
     C(2, 1) = C(1, 2);
   }
 
-  inline void BundleAdjustmentSolver::FillLowerTriangle(_BA_Mat66 &A)
+  inline void FullBundleAdjustmentSolver::FillLowerTriangle(_BA_Mat66 &A)
   {
     A(1, 0) = A(0, 1);
     A(2, 0) = A(0, 2);
@@ -804,7 +804,7 @@ namespace ba_solver
     A(5, 4) = A(4, 5);
   }
 
-  bool BundleAdjustmentSolver::Solve(Options options, Summary *summary)
+  bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary)
   {
     timer::StopWatch stopwatch("BundleAdjustmentSolver::Solve");
     const auto &max_iteration = options.iteration_handle.max_num_iterations;
@@ -942,7 +942,14 @@ namespace ba_solver
             0.0, fyinvz, -fy_yinvz2;
 
         const _BA_Rotation3 &R_cj = cam.pose_this_to_cam0.linear();
-        const _BA_Mat23 dpij_dXi_Rcj = dpij_dXi * R_cj;
+        // _BA_Mat23 dpij_dXi_Rcj = dpij_dXi * R_cj;
+        _BA_Mat23 dpij_dXi_Rcj;
+        dpij_dXi_Rcj(0, 0) = dpij_dXi(0, 0) * R_cj(0, 0) + dpij_dXi(0, 2) * R_cj(2, 0);
+        dpij_dXi_Rcj(0, 1) = dpij_dXi(0, 0) * R_cj(0, 1) + dpij_dXi(0, 2) * R_cj(2, 1);
+        dpij_dXi_Rcj(0, 2) = dpij_dXi(0, 0) * R_cj(0, 2) + dpij_dXi(0, 2) * R_cj(2, 2);
+        dpij_dXi_Rcj(1, 0) = dpij_dXi(1, 1) * R_cj(1, 0) + dpij_dXi(1, 2) * R_cj(2, 0);
+        dpij_dXi_Rcj(1, 1) = dpij_dXi(1, 1) * R_cj(1, 1) + dpij_dXi(1, 2) * R_cj(2, 1);
+        dpij_dXi_Rcj(1, 2) = dpij_dXi(1, 1) * R_cj(1, 2) + dpij_dXi(1, 2) * R_cj(2, 2);
 
         _BA_Mat26 Qij;
         _BA_Mat23 Rij;
@@ -1212,6 +1219,7 @@ namespace ba_solver
 
     return is_success;
   }
+
   std::string Summary::BriefReport()
   {
     const auto default_precision{std::cout.precision()};
@@ -1282,7 +1290,7 @@ namespace ba_solver
   }
 
   template <typename T>
-  void BundleAdjustmentSolver::se3Exp(const Eigen::Matrix<T, 6, 1> &xi, Eigen::Transform<T, 3, 1> &pose)
+  void FullBundleAdjustmentSolver::se3Exp(const Eigen::Matrix<T, 6, 1> &xi, Eigen::Transform<T, 3, 1> &pose)
   {
     // initialize variables
     T theta = 0.0;
@@ -1321,7 +1329,7 @@ namespace ba_solver
   }
 
   template <typename T>
-  void BundleAdjustmentSolver::so3Exp(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R)
+  void FullBundleAdjustmentSolver::so3Exp(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R)
   {
     // initialize variables
     T theta = 0.0;

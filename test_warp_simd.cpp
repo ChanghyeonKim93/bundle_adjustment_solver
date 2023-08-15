@@ -9,11 +9,10 @@
 #include "opencv4/opencv2/imgproc.hpp"
 #include "opencv4/opencv2/highgui.hpp"
 
-#include "core/timer.h"
+#include "utility/timer.h"
+#include "utility/simd_library.h"
 
-#include "core/bundle_adjustment_solver.h"
-
-#include "core/simd_library.h"
+#include "core/full_bundle_adjustment_solver.h"
 
 using Numeric = float;
 std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()

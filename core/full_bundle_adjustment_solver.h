@@ -1,5 +1,5 @@
-#ifndef _BUNDLE_ADJUSTMENT_SOLVER_H_
-#define _BUNDLE_ADJUSTMENT_SOLVER_H_
+#ifndef _FULL_BUNDLE_ADJUSTMENT_SOLVER_H_
+#define _FULL_BUNDLE_ADJUSTMENT_SOLVER_H_
 
 #include <iostream>
 #include <vector>
@@ -26,7 +26,7 @@
 
 #include <eigen3/Eigen/Dense>
 
-#include "timer.h"
+#include "../utility/timer.h"
 
 #define TEXT_RED(str) (std::string("\033[0;31m") + str + std::string("\033[0m"))
 #define TEXT_GREEN(str) (std::string("\033[0;32m") + str + std::string("\033[0m"))
@@ -124,7 +124,7 @@ namespace ba_solver
 
   class Options
   {
-    friend class BundleAdjustmentSolver;
+    friend class FullBundleAdjustmentSolver;
 
   public:
     Options() {}
@@ -155,7 +155,7 @@ namespace ba_solver
 
   class Summary
   {
-    friend class BundleAdjustmentSolver;
+    friend class FullBundleAdjustmentSolver;
 
   public:
     Summary();
@@ -213,11 +213,11 @@ namespace ba_solver
                 - 3)
     최적화 하고나서 주소 접근해서 업데이트 해줘야하는데?
   */
-  class BundleAdjustmentSolver
+  class FullBundleAdjustmentSolver
   {
   public:
-    BundleAdjustmentSolver(); // just reserve the memory
-    ~BundleAdjustmentSolver();
+    FullBundleAdjustmentSolver(); // just reserve the memory
+    ~FullBundleAdjustmentSolver();
 
     void Reset();
 

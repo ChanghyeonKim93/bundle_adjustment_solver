@@ -3,21 +3,22 @@ project(test_bundle_adjustment)
 message("   -- [PROJECT]: " ${CMAKE_PROJECT_NAME})
 
 set(CMAKE_BUILD_TYPE Release) # Release, RelWithDebInfo
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O2 -msse2 -msse3 -msse4.1 -msse4.2 -march=native -mfpmath=sse")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O2 -march=native")
 
 find_package(OpenCV 4 REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 include_directories ("/usr/include/opencv4/")
 include_directories(${Eigen3_INCLUDE_DIRS})
-include_directories(${CMAKE_SOURCE_DIR}/../)
+include_directories(${CMAKE_SOURCE_DIR}/)
 
 set(SRC
-  core/timer.cpp
-  core/pose_optimizer.cpp
-  core/bundle_adjustment_solver.cpp
-  
-  core/simd_library.cpp)
+  utility/timer.cpp
+  utility/simd_library.cpp
+
+  core/pose_only_bundle_adjustment_solver.cpp
+  core/full_bundle_adjustment_solver.cpp
+)
 
 # TEST
 add_executable(${CMAKE_PROJECT_NAME}_ba test_ba.cpp ${SRC})

@@ -1,5 +1,5 @@
-#ifndef _POSE_OPTIMIZER_H_
-#define _POSE_OPTIMIZER_H_
+#ifndef _POSE_ONLY_BUNDLE_ADJUSTMENT_H_
+#define _POSE_ONLY_BUNDLE_ADJUSTMENT_H_
 
 #include <iostream>
 #include <vector>
@@ -12,7 +12,7 @@
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 
-#include "timer.h"
+#include "../utility/timer.h"
 
 namespace analytic_solver
 {
@@ -34,7 +34,7 @@ namespace analytic_solver
   };
   class Options
   {
-    friend class PoseOptimizer;
+    friend class PoseOnlyBundleAdjustmentSolver;
 
   public:
     Options() {}
@@ -59,7 +59,7 @@ namespace analytic_solver
 
   class Summary
   {
-    friend class PoseOptimizer;
+    friend class PoseOnlyBundleAdjustmentSolver;
 
   public:
     Summary();
@@ -77,27 +77,13 @@ namespace analytic_solver
     bool convergence_status_;
   };
 
-  class PoseOptimizer
+  class PoseOnlyBundleAdjustmentSolver
   {
   public:
-    PoseOptimizer();
-    ~PoseOptimizer();
+    PoseOnlyBundleAdjustmentSolver();
+    ~PoseOnlyBundleAdjustmentSolver();
 
-    // bool Solve2DEuclideanDistanceMimization3Dof(
-    //     const std::vector<Eigen::Vector2f> &world_position_list,
-    //     const std::vector<Eigen::Vector2f> &current_position_list,
-    //     std::vector<bool> &mask_inlier,
-    //     Options options,
-    //     Summary *summary = nullptr); // residual = warp(pos_cur) - pos_world \in \mathbb{R}^{3}
-    // bool Solve2DEuclideanDistanceMimizationWithNormalVector3Dof(
-    //     const std::vector<Eigen::Vector2f> &world_position_list,
-    //     const std::vector<Eigen::Vector2f> &normal_vector_list,
-    //     const std::vector<Eigen::Vector2f> &current_position_list,
-    //     std::vector<bool> &mask_inlier,
-    //     Options options,
-    //     Summary *summary = nullptr); // residual = normal_vector.transpose()* (warp(pos_cur) - pos_world)  \in \mathbb{R}
-
-    bool SolveMonocularPoseOnlyBundleAdjustment3Dof(
+    bool SolveMonocular_Planar3Dof(
         const std::vector<Eigen::Vector3f> &world_position_list,
         const std::vector<Eigen::Vector2f> &matched_pixel_list,
         const float fx, const float fy, const float cx, const float cy,
@@ -107,7 +93,7 @@ namespace analytic_solver
         std::vector<bool> &mask_inlier,
         Options options,
         Summary *summary = nullptr);
-    bool SolveStereoPoseOnlyBundleAdjustment3Dof(
+    bool SolveStereo_Planar3Dof(
         const std::vector<Eigen::Vector3f> &world_position_list,
         const std::vector<Eigen::Vector2f> &matched_left_pixel_list,
         const std::vector<Eigen::Vector2f> &matched_right_pixel_list,
@@ -122,7 +108,7 @@ namespace analytic_solver
         Options options,
         Summary *summary = nullptr);
 
-    bool SolveMonocularPoseOnlyBundleAdjustment6Dof(
+    bool SolveMonocular_6Dof(
         const std::vector<Eigen::Vector3f> &world_position_list,
         const std::vector<Eigen::Vector2f> &matched_pixel_list,
         const float fx, const float fy, const float cx, const float cy,
@@ -130,7 +116,7 @@ namespace analytic_solver
         std::vector<bool> &mask_inlier,
         Options options,
         Summary *summary = nullptr);
-    bool SolveStereoPoseOnlyBundleAdjustment6Dof(
+    bool SolveStereo_6Dof(
         const std::vector<Eigen::Vector3f> &world_position_list,
         const std::vector<Eigen::Vector2f> &matched_left_pixel_list,
         const std::vector<Eigen::Vector2f> &matched_right_pixel_list,
@@ -143,25 +129,13 @@ namespace analytic_solver
         Options options,
         Summary *summary = nullptr);
 
-    // NDT optimization
-    bool SolveNdtPoseOptimization6Dof(
-        const std::vector<Eigen::Vector3f> &query_position_list,
-        const std::vector<Eigen::Vector3f> &reference_cell_mu,
-        const std::vector<Eigen::Matrix3f> &reference_cell_covariance,
-        Eigen::Isometry3f &pose_reference_to_query,
-        Summary *summary = nullptr,
-        const int max_iteration = 50,
-        const float threshold_outlier_reproj_error = 2.0,
-        const float threshold_huber_loss = 5.0,
-        const float threshold_convergence_delta_pose = 1e-4, const float threshold_convergence_delta_error = 1e-4);
-
     std::vector<Eigen::Isometry3f> GetDebugPoses();
 
   private:
-    inline void WarpPointList(
+    inline void WarpPositionList(
         const Eigen::Isometry3f &pose_target_to_initial,
         const std::vector<Eigen::Vector3f> &initial_position_list,
-        std::vector<Eigen::Vector3f> &warped_target_position_list);
+        std::vector<Eigen::Vector3f> &warped_position_list);
 
     inline void ComputeJacobianResidual_ReprojectionError_6Dof(
         const Eigen::Vector3f &local_position,
@@ -200,74 +174,24 @@ namespace analytic_solver
         float &error,
         float &error_nonweighted);
 
-    // S list, mu list
-    // d_list = warped_position_list - mu_list;
-    // Sd_list = S_list .* d_list;
-    // mahalanobis_dist_list = d_list.'*Sd_list;
-    // weight_list = Calc(mahalanobis_dist_list);
-    // S_hat = sum(w_list.*S_list);
-    // Sd_hat = sum(w_list.*Sd_list);
-
-    inline void ComputeRelatedResidualAndWeight(
-        const Eigen::Vector3f &warped_position,
-        const std::vector<Eigen::Vector3f> &related_ndt_center_list,
-        const std::vector<Eigen::Matrix<float, 3, 3>> &related_ndt_inverse_covmat_list,
-        std::vector<Eigen::Vector3f> &related_residual_list,
-        std::vector<Eigen::Vector3f> &related_invcov_residual_list,
-        std::vector<float> &related_weight_list);
-
-    inline void SumInformationMatrixAndInvCovResidualList(
-        const std::vector<float> &related_weight_list,
-        const std::vector<Eigen::Vector3f> &related_invcov_residual_list,
-        const std::vector<Eigen::Matrix<float, 3, 3>> &related_ndt_inverse_covmat_list,
-        Eigen::Matrix<float, 3, 3> &sum_of_ndt_inverse_covmat_list);
-
-    inline void ComputeJacobianResidual_NormalDistributionTransform_6Dof_unoptimized(
-        const Eigen::Vector3f &local_position,
-        const Eigen::Vector3f &matched_ndt_mu,
-        const Eigen::Matrix<float, 3, 3> &matched_ndt_information_matrix,
-        Eigen::Matrix<float, 6, 3> &jacobian_matrix_transpose,
-        Eigen::Matrix<float, 3, 1> &residual_vector);
-    inline void ComputeGradientHessian_NormalDistributionTransform_6Dof_unoptimized(
-        const Eigen::Matrix<float, 3, 3> &matched_ndt_information_matrix,
-        const Eigen::Matrix<float, 6, 3> &jacobian_matrix_transpose,
-        const Eigen::Matrix<float, 3, 1> &residual_vector,
-        const float &threshold_huber,
-        Eigen::Matrix<float, 6, 1> &gradient_vector,
-        Eigen::Matrix<float, 6, 6> &hessian_matrix,
-        float &error,
-        float &error_nonweighted);
-
-    // inline void ComputeJacobianResidualNDT6Dof(
-    //     const Eigen::Vector3f &query_position,
-    //     const Eigen::Vector3f &matched_ndt_center_position,
-    //     const Eigen::Isometry3f &pose_reference_to_query,
-    //     Eigen::Matrix<float, 3, 1> &residual_vector,
-    //     Eigen::Matrix<float, 3, 6> &jacobian_matrix);
-
-    // inline void ComputeHessianAndGradientNDT6Dof();
-
   private:
     inline void CalcJtJ_x_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp);
     inline void CalcJtJ_y_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp);
     inline void CalcJtWJ_x_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp);
     inline void CalcJtWJ_y_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp);
-    inline void AddHessianOnlyUpperTriangle_6Dof(const Eigen::Matrix<float, 6, 6> &JtJ_tmp, Eigen::Matrix<float, 6, 6> &JtJ);
+    inline void AddHessian_OnlyUpperTriangle_6Dof(const Eigen::Matrix<float, 6, 6> &JtJ_tmp, Eigen::Matrix<float, 6, 6> &JtJ);
     inline void FillLowerTriangle_6Dof(Eigen::Matrix<float, 6, 6> &JtJ);
 
-    inline void CalcJtJ_3Dof(const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp);
-    inline void CalcJtWJ_3Dof(const float weight, const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp);
-    inline void AddHessianOnlyUpperTriangle_3Dof(const Eigen::Matrix<float, 3, 3> &JtJ_tmp, Eigen::Matrix<float, 3, 3> &JtJ);
-    inline void FillLowerTriangleByUpperTriangle_3Dof(Eigen::Matrix<float, 3, 3> &JtJ);
-
-  private:
-    inline void CalcJtSJ_6Dof(const Eigen::Matrix<float, 3, 6> &J, const Eigen::Matrix<float, 3, 3> &S, Eigen::Matrix<float, 6, 6> &JtSJ);
+    inline void CalcJtJ_Planar3Dof(const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp);
+    inline void CalcJtWJ_Planar3Dof(const float weight, const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp);
+    inline void AddHessian_OnlyUpperTriangle_Planar3Dof(const Eigen::Matrix<float, 3, 3> &JtJ_tmp, Eigen::Matrix<float, 3, 3> &JtJ);
+    inline void FillLowerTriangleByUpperTriangle_Planar3Dof(Eigen::Matrix<float, 3, 3> &JtJ);
 
   private:
     template <typename T>
-    void se3Exp(const Eigen::Matrix<T, 6, 1> &xi, Eigen::Transform<T, 3, 1> &pose);
+    void CalculateMatrixExpoenetial_se3(const Eigen::Matrix<T, 6, 1> &xi, Eigen::Transform<T, 3, 1> &pose);
     template <typename T>
-    void so3Exp(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R);
+    void CalculateMatrixExpoenetial_so3(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R);
 
   private:
     std::vector<Eigen::Isometry3f> debug_poses_;

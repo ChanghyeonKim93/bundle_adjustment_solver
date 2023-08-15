@@ -9,11 +9,11 @@
 #include "opencv4/opencv2/imgproc.hpp"
 #include "opencv4/opencv2/highgui.hpp"
 
-#include "core/timer.h"
+#include "utility/timer.h"
+#include "utility/simd_library.h"
 
-#include "core/bundle_adjustment_solver.h"
-
-#include "core/simd_library.h"
+#include "core/pose_only_bundle_adjustment_solver.h"
+#include "core/full_bundle_adjustment_solver.h"
 
 using Numeric = float;
 bool in_image(const ba_solver::_BA_Pixel &pixel, const int n_cols, const int n_rows)
@@ -219,7 +219,7 @@ int main()
   }
 
   // Solve problem
-  ba_solver::BundleAdjustmentSolver ba_solver;
+  ba_solver::FullBundleAdjustmentSolver ba_solver;
   for (const auto &camera : camera_list)
     ba_solver.AddCamera(camera);
 

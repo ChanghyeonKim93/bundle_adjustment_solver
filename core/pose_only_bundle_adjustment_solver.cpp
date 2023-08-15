@@ -1,4 +1,4 @@
-#include "pose_optimizer.h"
+#include "pose_only_bundle_adjustment_solver.h"
 namespace analytic_solver
 {
   std::string Summary::BriefReport()
@@ -38,13 +38,14 @@ namespace analytic_solver
   {
     return total_time_in_millisecond_ * 0.001;
   }
+};
 
-  PoseOptimizer::PoseOptimizer()
-  {
-  }
-  PoseOptimizer::~PoseOptimizer() {}
+namespace analytic_solver
+{
+  PoseOnlyBundleAdjustmentSolver::PoseOnlyBundleAdjustmentSolver() {}
+  PoseOnlyBundleAdjustmentSolver::~PoseOnlyBundleAdjustmentSolver() {}
 
-  bool PoseOptimizer::SolveMonocularPoseOnlyBundleAdjustment6Dof(
+  bool PoseOnlyBundleAdjustmentSolver::SolveMonocular_6Dof(
       const std::vector<Eigen::Vector3f> &world_position_list,
       const std::vector<Eigen::Vector2f> &matched_pixel_list,
       const float fx, const float fy, const float cx, const float cy,
@@ -68,7 +69,7 @@ namespace analytic_solver
     }
     debug_poses_.resize(0);
     if (world_position_list.size() != matched_pixel_list.size())
-      throw std::runtime_error("In PoseOptimizer::SolveMonocularPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != current_pixel_list.size()");
+      throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveMonocularPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != current_pixel_list.size()");
 
     bool is_success = true;
 
@@ -97,8 +98,8 @@ namespace analytic_solver
       mJtWr.setZero();
 
       // Warp and project 3d point & calculate error
-      WarpPointList(pose_camera_to_world_optimized, world_position_list,
-                    warped_local_position_list);
+      WarpPositionList(pose_camera_to_world_optimized, world_position_list,
+                       warped_local_position_list);
       float err_curr = 0.0f;
       size_t count_invalid = 0;
       for (size_t index = 0; index < n_pts; ++index)
@@ -125,7 +126,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i;
-        AddHessianOnlyUpperTriangle_6Dof(hessian_i, JtWJ);
+        AddHessian_OnlyUpperTriangle_6Dof(hessian_i, JtWJ);
         err_curr += error_i;
 
         // Outlier rejection
@@ -143,7 +144,7 @@ namespace analytic_solver
 
       const Eigen::Matrix<float, 6, 1> delta_xi = JtWJ.ldlt().solve(mJtWr);
       Eigen::Isometry3f delta_pose;
-      se3Exp<float>(delta_xi, delta_pose);
+      CalculateMatrixExpoenetial_se3<float>(delta_xi, delta_pose);
       pose_camera_to_world_optimized = delta_pose * pose_camera_to_world_optimized;
 
       debug_poses_.push_back(pose_camera_to_world_optimized.inverse());
@@ -198,7 +199,7 @@ namespace analytic_solver
     return is_success;
   }
 
-  bool PoseOptimizer::SolveStereoPoseOnlyBundleAdjustment6Dof(
+  bool PoseOnlyBundleAdjustmentSolver::SolveStereo_6Dof(
       const std::vector<Eigen::Vector3f> &world_position_list,
       const std::vector<Eigen::Vector2f> &matched_left_pixel_list,
       const std::vector<Eigen::Vector2f> &matched_right_pixel_list,
@@ -227,9 +228,9 @@ namespace analytic_solver
     }
     debug_poses_.resize(0);
     if (world_position_list.size() != matched_left_pixel_list.size())
-      throw std::runtime_error("In PoseOptimizer::SolveStereoPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != left_current_pixel_list.size()");
+      throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveStereoPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != left_current_pixel_list.size()");
     if (world_position_list.size() != matched_right_pixel_list.size())
-      throw std::runtime_error("In PoseOptimizer::SolveStereoPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != right_current_pixel_list.size()");
+      throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveStereoPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != right_current_pixel_list.size()");
 
     bool is_success = true;
 
@@ -262,10 +263,10 @@ namespace analytic_solver
       const Eigen::Isometry3f pose_right_camera_to_world_optimized = pose_right_to_left * pose_camera_to_world_optimized;
 
       // Warp and project 3d point & calculate error
-      WarpPointList(pose_camera_to_world_optimized, world_position_list,
-                    warped_left_position_list);
-      WarpPointList(pose_right_to_left, warped_left_position_list,
-                    warped_right_position_list);
+      WarpPositionList(pose_camera_to_world_optimized, world_position_list,
+                       warped_left_position_list);
+      WarpPositionList(pose_right_to_left, warped_left_position_list,
+                       warped_right_position_list);
 
       float err_curr = 0.0f;
       size_t count_invalid = 0;
@@ -298,7 +299,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_left;
-        AddHessianOnlyUpperTriangle_6Dof(hessian_i_left, JtWJ);
+        AddHessian_OnlyUpperTriangle_6Dof(hessian_i_left, JtWJ);
         err_curr += error_i_left;
 
         // Outlier rejection
@@ -332,7 +333,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_right;
-        AddHessianOnlyUpperTriangle_6Dof(hessian_i_right, JtWJ);
+        AddHessian_OnlyUpperTriangle_6Dof(hessian_i_right, JtWJ);
         err_curr += error_i_right;
 
         // Outlier rejection
@@ -350,7 +351,7 @@ namespace analytic_solver
 
       const Eigen::Matrix<float, 6, 1> delta_xi = JtWJ.ldlt().solve(mJtWr);
       Eigen::Isometry3f delta_pose;
-      se3Exp<float>(delta_xi, delta_pose);
+      CalculateMatrixExpoenetial_se3<float>(delta_xi, delta_pose);
       pose_camera_to_world_optimized = delta_pose * pose_camera_to_world_optimized;
 
       debug_poses_.push_back(pose_camera_to_world_optimized.inverse());
@@ -405,7 +406,7 @@ namespace analytic_solver
     return is_success;
   }
 
-  bool PoseOptimizer::SolveMonocularPoseOnlyBundleAdjustment3Dof(
+  bool PoseOnlyBundleAdjustmentSolver::SolveMonocular_Planar3Dof(
       const std::vector<Eigen::Vector3f> &world_position_list,
       const std::vector<Eigen::Vector2f> &matched_pixel_list,
       const float fx, const float fy, const float cx, const float cy,
@@ -431,7 +432,7 @@ namespace analytic_solver
     }
     debug_poses_.resize(0);
     if (world_position_list.size() != matched_pixel_list.size())
-      throw std::runtime_error("In PoseOptimizer::SolveMonocularPoseOnlyBundleAdjustment3Dof(), world_position_list.size() != current_pixel_list.size()");
+      throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveMonocularPoseOnlyBundleAdjustment3Dof(), world_position_list.size() != current_pixel_list.size()");
 
     bool is_success = true;
 
@@ -493,8 +494,8 @@ namespace analytic_solver
       const auto pose_c2b1_optimized = pose_camera_to_base * pose_b2b1_optimized;
 
       // Warp and project 3d point & calculate error
-      WarpPointList(pose_c2b1_optimized, world_position_list,
-                    warped_local_position_list);
+      WarpPositionList(pose_c2b1_optimized, world_position_list,
+                       warped_local_position_list);
       float err_curr = 0.0f;
       size_t count_invalid = 0;
       for (size_t index = 0; index < n_pts; ++index)
@@ -523,7 +524,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i;
-        AddHessianOnlyUpperTriangle_3Dof(hessian_i, JtWJ);
+        AddHessian_OnlyUpperTriangle_Planar3Dof(hessian_i, JtWJ);
         err_curr += error_i;
 
         // Outlier rejection
@@ -535,7 +536,7 @@ namespace analytic_solver
       }
 
       // Solve H^-1*Jtr;
-      FillLowerTriangleByUpperTriangle_3Dof(JtWJ);
+      FillLowerTriangleByUpperTriangle_Planar3Dof(JtWJ);
       for (size_t i = 0; i < 3; ++i)
         JtWJ(i, i) *= (1.0f + lambda); // lambda
 
@@ -607,7 +608,7 @@ namespace analytic_solver
     return is_success;
   }
 
-  bool PoseOptimizer::SolveStereoPoseOnlyBundleAdjustment3Dof(
+  bool PoseOnlyBundleAdjustmentSolver::SolveStereo_Planar3Dof(
       const std::vector<Eigen::Vector3f> &world_position_list,
       const std::vector<Eigen::Vector2f> &matched_left_pixel_list,
       const std::vector<Eigen::Vector2f> &matched_right_pixel_list,
@@ -637,9 +638,9 @@ namespace analytic_solver
     }
     debug_poses_.resize(0);
     if (world_position_list.size() != matched_left_pixel_list.size())
-      throw std::runtime_error("In PoseOptimizer::SolveMonocularPoseOnlyBundleAdjustment3Dof(), world_position_list.size() != left_current_pixel_list.size()");
+      throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveMonocularPoseOnlyBundleAdjustment3Dof(), world_position_list.size() != left_current_pixel_list.size()");
     if (world_position_list.size() != matched_right_pixel_list.size())
-      throw std::runtime_error("In PoseOptimizer::SolveMonocularPoseOnlyBundleAdjustment3Dof(), world_position_list.size() != right_current_pixel_list.size()");
+      throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveMonocularPoseOnlyBundleAdjustment3Dof(), world_position_list.size() != right_current_pixel_list.size()");
 
     bool is_success = true;
 
@@ -706,10 +707,10 @@ namespace analytic_solver
       const auto pose_right_c2b1_optimized = pose_right_to_left * pose_left_c2b1_optimized;
 
       // Warp and project 3d point & calculate error
-      WarpPointList(pose_left_c2b1_optimized, world_position_list,
-                    warped_left_position_list);
-      WarpPointList(pose_right_c2b1_optimized, world_position_list,
-                    warped_right_position_list);
+      WarpPositionList(pose_left_c2b1_optimized, world_position_list,
+                       warped_left_position_list);
+      WarpPositionList(pose_right_c2b1_optimized, world_position_list,
+                       warped_right_position_list);
 
       float err_curr = 0.0f;
       size_t count_invalid = 0;
@@ -747,7 +748,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_left;
-        AddHessianOnlyUpperTriangle_3Dof(hessian_i_left, JtWJ);
+        AddHessian_OnlyUpperTriangle_Planar3Dof(hessian_i_left, JtWJ);
         err_curr += error_i_left;
 
         // Outlier rejection
@@ -783,7 +784,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_right;
-        AddHessianOnlyUpperTriangle_3Dof(hessian_i_right, JtWJ);
+        AddHessian_OnlyUpperTriangle_Planar3Dof(hessian_i_right, JtWJ);
         err_curr += error_i_right;
 
         // Outlier rejection
@@ -795,7 +796,7 @@ namespace analytic_solver
       }
 
       // Solve H^-1*Jtr;
-      FillLowerTriangleByUpperTriangle_3Dof(JtWJ);
+      FillLowerTriangleByUpperTriangle_Planar3Dof(JtWJ);
       for (size_t i = 0; i < 3; ++i)
         JtWJ(i, i) *= (1.0f + lambda); // lambda
 
@@ -866,196 +867,12 @@ namespace analytic_solver
     return is_success;
   }
 
-  // NDT minimization
-  bool PoseOptimizer::SolveNdtPoseOptimization6Dof(
-      const std::vector<Eigen::Vector3f> &query_position_list,
-      const std::vector<Eigen::Vector3f> &reference_cell_mu,
-      const std::vector<Eigen::Matrix3f> &reference_cell_covariance,
-      Eigen::Isometry3f &pose_reference_to_query,
-      Summary *summary,
-      const int max_iteration,
-      const float threshold_outlier_reproj_error,
-      const float threshold_huber_loss,
-      const float threshold_convergence_delta_pose, const float threshold_convergence_delta_error)
-  {
-    if (query_position_list.size() != reference_cell_mu.size())
-      throw std::runtime_error("query_position_list.size() != reference_cell_mu.size()");
-    if (query_position_list.size() != reference_cell_covariance.size())
-      throw std::runtime_error("query_position_list.size() != reference_cell_covariance.size()");
-
-    timer::StopWatch stopwatch("SolveNdtPoseOptimization6Dof");
-    if (summary != nullptr)
-    {
-      summary->max_iteration_ = max_iteration;
-      summary->threshold_cost_change_ = threshold_convergence_delta_error;
-      summary->threshold_step_size_ = threshold_convergence_delta_pose;
-      summary->convergence_status_ = true;
-    }
-    debug_poses_.resize(0);
-
-    bool is_success = true;
-
-    const size_t num_query_points = query_position_list.size();
-    const float inverse_num_query_points = 1.0 / num_query_points;
-
-    const size_t MAX_ITER = max_iteration;
-    const float THRES_HUBER = threshold_huber_loss; // pixels
-    const float THRES_DELTA_XI = threshold_convergence_delta_pose;
-    const float THRES_DELTA_ERROR = threshold_convergence_delta_error;
-    const float THRES_REPROJ_ERROR = threshold_outlier_reproj_error; // pixels
-
-    Eigen::Isometry3f pose_reference_to_query_optimized = pose_reference_to_query;
-
-    stopwatch.Start();
-    bool is_converged = true;
-    float err_prev = 1e10f;
-    float lambda = 1e-5f;
-
-    Eigen::Matrix<float, 6, 6> JtSJ;
-    Eigen::Matrix<float, 6, 1> mJtSr;
-    for (int iter = 0; iter < MAX_ITER; ++iter)
-    {
-      JtSJ.setZero();
-      mJtSr.setZero();
-
-      // Warp and project 3d point & calculate error
-      float err_curr = 0.0f;
-      size_t count_invalid = 0;
-      for (size_t index = 0; index < num_query_points; ++index)
-      {
-        const Eigen::Vector3f &query_point = query_position_list[index];
-
-        // Warp the point
-        const Eigen::Vector3f rotated_query_point = pose_reference_to_query_optimized.linear() * query_point;
-        const Eigen::Vector3f warped_query_point = rotated_query_point + pose_reference_to_query_optimized.translation();
-
-        //  center, information matrix
-        const Eigen::Vector3f &cell_center_position = reference_cell_mu[index];
-        const Eigen::Matrix3f &cell_inverse_covariance_matrix = reference_cell_covariance[index].inverse();
-
-        // Calculate residual & jacobian
-        // residual
-        const Eigen::Vector3f d_i = warped_query_point - cell_center_position;
-        const Eigen::Vector3f Sd_i = cell_inverse_covariance_matrix * d_i;
-
-        // Jacobian matrix
-        Eigen::Matrix<float, 3, 6> J;
-        // jacobian_matrix << eye(3,3) , -skew(rotated_query_point)
-        J.setZero();
-        J(0, 0) = 1;
-        J(1, 1) = 1;
-        J(2, 2) = 1;
-        J(0, 4) = rotated_query_point(2);
-        J(0, 5) = -rotated_query_point(1);
-        J(1, 5) = rotated_query_point(0);
-
-        J(1, 3) = -rotated_query_point(2);
-        J(2, 3) = rotated_query_point(1);
-        J(2, 4) = -rotated_query_point(0);
-
-        // Huber weight calculation by the Manhattan distance
-        float weight = 1.0f;
-        float abs_residual = std::sqrt(d_i.transpose() * Sd_i);
-        if (abs_residual >= THRES_HUBER)
-        {
-          weight = THRES_HUBER / abs_residual;
-
-          Eigen::Matrix<float, 6, 6> JtSJ_tmp;
-          const Eigen::Matrix<float, 3, 6> wJ = weight * J;
-          this->CalcJtSJ_6Dof(wJ, cell_inverse_covariance_matrix, JtSJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
-          AddHessianOnlyUpperTriangle_6Dof(JtSJ_tmp, JtSJ);
-          mJtSr.noalias() -= wJ.transpose() * Sd_i;
-          err_curr += abs_residual;
-        }
-        else
-        {
-          Eigen::Matrix<float, 6, 6> JtSJ_tmp;
-          this->CalcJtSJ_6Dof(J, cell_inverse_covariance_matrix, JtSJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
-          AddHessianOnlyUpperTriangle_6Dof(JtSJ_tmp, JtSJ);
-          mJtSr.noalias() -= J.transpose() * Sd_i;
-          err_curr += abs_residual;
-        }
-
-        if (abs_residual >= THRES_REPROJ_ERROR)
-        {
-          // mask_inlier[index] = false;
-          ++count_invalid;
-        }
-      }
-
-      // Solve H^-1*Jtr;
-      FillLowerTriangle_6Dof(JtSJ);
-      for (size_t i = 0; i < 6; ++i)
-        JtSJ(i, i) *= (1.0f + lambda); // lambda
-
-      const Eigen::Matrix<float, 6, 1> delta_param = JtSJ.ldlt().solve(mJtSr); // tx ty tz wx wy wz
-      Eigen::Matrix<float, 3, 3> delta_R;
-      so3Exp<float>(delta_param.block<3, 1>(3, 0), delta_R);
-      Eigen::Isometry3f delta_pose;
-      delta_pose.linear() = delta_R;
-      delta_pose.translation() = delta_param.block<3, 1>(0, 0);
-
-      // update pose
-      pose_reference_to_query_optimized = delta_pose * pose_reference_to_query_optimized;
-
-      debug_poses_.push_back(pose_reference_to_query_optimized);
-
-      err_curr *= inverse_num_query_points;
-      const float delta_error = abs(err_curr - err_prev);
-      if (delta_param.norm() < THRES_DELTA_XI || delta_error < THRES_DELTA_ERROR)
-      {
-        is_converged = true;
-        // std::cout << "    Early convergence. stops at iteration " << iter << ", error: " << err_curr << ", delta_error: " << delta_error << ", step_size: " << delta_xi.norm() << ", # invalid: " << count_invalid << "\n";
-        break;
-      }
-      if (iter == MAX_ITER - 1)
-      {
-        is_converged = false;
-      }
-      err_prev = err_curr;
-
-      const double iter_time = stopwatch.GetLapTimeFromLatest();
-      if (summary != nullptr)
-      {
-        OptimizationInfo optimization_info;
-        optimization_info.cost = err_curr;
-        optimization_info.cost_change = abs(delta_error);
-        optimization_info.abs_step = delta_param.norm();
-        optimization_info.abs_gradient = 0;
-        optimization_info.iter_time = iter_time;
-
-        summary->optimization_info_list_.push_back(optimization_info);
-      }
-    }
-
-    const double total_time = stopwatch.GetLapTimeFromStart();
-    if (summary != nullptr)
-    {
-      summary->convergence_status_ = is_converged;
-      summary->total_time_in_millisecond_ = total_time;
-    }
-
-    if (!std::isnan(pose_reference_to_query_optimized.linear().norm()))
-    {
-      pose_reference_to_query = pose_reference_to_query_optimized.inverse();
-    }
-    else
-    {
-      std::cout << "!! WARNING !! poseonly BA yields NAN value!!"
-                << ", pose_reference_to_query_optimized: \n"
-                << pose_reference_to_query_optimized.linear() << " " << pose_reference_to_query_optimized.translation() << "\n";
-      is_success = false; // if nan, do not update.
-    }
-
-    return is_success;
-  }
-
-  std::vector<Eigen::Isometry3f> PoseOptimizer::GetDebugPoses()
+  std::vector<Eigen::Isometry3f> PoseOnlyBundleAdjustmentSolver::GetDebugPoses()
   {
     return debug_poses_;
   }
 
-  inline void PoseOptimizer::CalcJtJ_x_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalcJtJ_x_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1111,7 +928,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOptimizer::CalcJtJ_y_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalcJtJ_y_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1167,7 +984,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOptimizer::CalcJtWJ_x_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalcJtWJ_x_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1229,7 +1046,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOptimizer::CalcJtWJ_y_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalcJtWJ_y_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1291,7 +1108,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOptimizer::AddHessianOnlyUpperTriangle_6Dof(const Eigen::Matrix<float, 6, 6> &JtJ_tmp, Eigen::Matrix<float, 6, 6> &JtJ)
+  inline void PoseOnlyBundleAdjustmentSolver::AddHessian_OnlyUpperTriangle_6Dof(const Eigen::Matrix<float, 6, 6> &JtJ_tmp, Eigen::Matrix<float, 6, 6> &JtJ)
   {
     JtJ(0, 0) += JtJ_tmp(0, 0);
     JtJ(0, 1) += JtJ_tmp(0, 1);
@@ -1321,7 +1138,7 @@ namespace analytic_solver
     JtJ(5, 5) += JtJ_tmp(5, 5);
   }
 
-  inline void PoseOptimizer::FillLowerTriangle_6Dof(Eigen::Matrix<float, 6, 6> &JtJ)
+  inline void PoseOnlyBundleAdjustmentSolver::FillLowerTriangle_6Dof(Eigen::Matrix<float, 6, 6> &JtJ)
   {
     JtJ(1, 0) = JtJ(0, 1);
     JtJ(2, 0) = JtJ(0, 2);
@@ -1344,7 +1161,7 @@ namespace analytic_solver
     JtJ(5, 4) = JtJ(4, 5);
   }
 
-  inline void PoseOptimizer::CalcJtJ_3Dof(const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalcJtJ_Planar3Dof(const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1367,7 +1184,7 @@ namespace analytic_solver
     JtJ_tmp(2, 1) = JtJ_tmp(1, 2);
   }
 
-  inline void PoseOptimizer::CalcJtWJ_3Dof(const float weight, const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalcJtWJ_Planar3Dof(const float weight, const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1396,7 +1213,7 @@ namespace analytic_solver
     JtJ_tmp(2, 1) = JtJ_tmp(1, 2);
   }
 
-  inline void PoseOptimizer::AddHessianOnlyUpperTriangle_3Dof(const Eigen::Matrix<float, 3, 3> &JtJ_tmp, Eigen::Matrix<float, 3, 3> &JtJ)
+  inline void PoseOnlyBundleAdjustmentSolver::AddHessian_OnlyUpperTriangle_Planar3Dof(const Eigen::Matrix<float, 3, 3> &JtJ_tmp, Eigen::Matrix<float, 3, 3> &JtJ)
   {
     JtJ(0, 0) += JtJ_tmp(0, 0);
     JtJ(0, 1) += JtJ_tmp(0, 1);
@@ -1407,10 +1224,10 @@ namespace analytic_solver
 
     JtJ(2, 2) += JtJ_tmp(2, 2);
 
-    FillLowerTriangleByUpperTriangle_3Dof(JtJ);
+    FillLowerTriangleByUpperTriangle_Planar3Dof(JtJ);
   }
 
-  inline void PoseOptimizer::FillLowerTriangleByUpperTriangle_3Dof(Eigen::Matrix<float, 3, 3> &JtJ)
+  inline void PoseOnlyBundleAdjustmentSolver::FillLowerTriangleByUpperTriangle_Planar3Dof(Eigen::Matrix<float, 3, 3> &JtJ)
   {
     JtJ(1, 0) = JtJ(0, 1);
     JtJ(2, 0) = JtJ(0, 2);
@@ -1418,96 +1235,8 @@ namespace analytic_solver
     JtJ(2, 1) = JtJ(1, 2);
   }
 
-  inline void PoseOptimizer::CalcJtSJ_6Dof(const Eigen::Matrix<float, 3, 6> &J, const Eigen::Matrix<float, 3, 3> &S, Eigen::Matrix<float, 6, 6> &JtSJ)
-  {
-    // JtSJ.setZero();
-    Eigen::Matrix<float, 3, 6> SJ;
-    // SJ.setZero();
-    SJ = S * J; // 54 mult, 36 add
-
-    // Product
-    // Original : 108 mult, 72 add
-    // Reduced  : 63 mult + 42 add + 16 insert
-#define Jti_mult_SJj(J, SJ, i, j) (J(i, 0) * SJ(0, j) + J(i, 1) * SJ(1, j) + J(i, 2) * SJ(2, j))
-    JtSJ(0, 0) = Jti_mult_SJj(J, SJ, 0, 0);
-    JtSJ(0, 1) = Jti_mult_SJj(J, SJ, 0, 1);
-    JtSJ(0, 2) = Jti_mult_SJj(J, SJ, 0, 2);
-    JtSJ(0, 3) = Jti_mult_SJj(J, SJ, 0, 3);
-    JtSJ(0, 4) = Jti_mult_SJj(J, SJ, 0, 4);
-    JtSJ(0, 5) = Jti_mult_SJj(J, SJ, 0, 5);
-
-    JtSJ(1, 1) = Jti_mult_SJj(J, SJ, 1, 1);
-    JtSJ(1, 2) = Jti_mult_SJj(J, SJ, 1, 2);
-    JtSJ(1, 3) = Jti_mult_SJj(J, SJ, 1, 3);
-    JtSJ(1, 4) = Jti_mult_SJj(J, SJ, 1, 4);
-    JtSJ(1, 5) = Jti_mult_SJj(J, SJ, 1, 5);
-
-    JtSJ(2, 2) = Jti_mult_SJj(J, SJ, 2, 2);
-    JtSJ(2, 3) = Jti_mult_SJj(J, SJ, 2, 3);
-    JtSJ(2, 4) = Jti_mult_SJj(J, SJ, 2, 4);
-    JtSJ(2, 5) = Jti_mult_SJj(J, SJ, 2, 5);
-
-    JtSJ(3, 3) = Jti_mult_SJj(J, SJ, 3, 3);
-    JtSJ(3, 4) = Jti_mult_SJj(J, SJ, 3, 4);
-    JtSJ(3, 5) = Jti_mult_SJj(J, SJ, 3, 5);
-
-    JtSJ(4, 4) = Jti_mult_SJj(J, SJ, 4, 4);
-    JtSJ(4, 5) = Jti_mult_SJj(J, SJ, 4, 5);
-
-    JtSJ(5, 5) = Jti_mult_SJj(J, SJ, 5, 5);
-#undef Jti_mult_SJj
-
-    // JtSJ(0,0) = J.block<3,1>(0,0).transpose()*SJ.block<3,1>(0,0);
-    // JtSJ(0,1) = J.block<3,1>(0,0).transpose()*SJ.block<3,1>(0,1);
-    // JtSJ(0,2) = J.block<3,1>(0,0).transpose()*SJ.block<3,1>(0,2);
-    // JtSJ(0,3) = J.block<3,1>(0,0).transpose()*SJ.block<3,1>(0,3);
-    // JtSJ(0,4) = J.block<3,1>(0,0).transpose()*SJ.block<3,1>(0,4);
-    // JtSJ(0,5) = J.block<3,1>(0,0).transpose()*SJ.block<3,1>(0,5);
-
-    // JtSJ(1,1) = J.block<3,1>(0,1).transpose()*SJ.block<3,1>(0,1);
-    // JtSJ(1,2) = J.block<3,1>(0,1).transpose()*SJ.block<3,1>(0,2);
-    // JtSJ(1,3) = J.block<3,1>(0,1).transpose()*SJ.block<3,1>(0,3);
-    // JtSJ(1,4) = J.block<3,1>(0,1).transpose()*SJ.block<3,1>(0,4);
-    // JtSJ(1,5) = J.block<3,1>(0,1).transpose()*SJ.block<3,1>(0,5);
-
-    // JtSJ(2,2) = J.block<3,1>(0,2).transpose()*SJ.block<3,1>(0,2);
-    // JtSJ(2,3) = J.block<3,1>(0,2).transpose()*SJ.block<3,1>(0,3);
-    // JtSJ(2,4) = J.block<3,1>(0,2).transpose()*SJ.block<3,1>(0,4);
-    // JtSJ(2,5) = J.block<3,1>(0,2).transpose()*SJ.block<3,1>(0,5);
-
-    // JtSJ(3,3) = J.block<3,1>(0,3).transpose()*SJ.block<3,1>(0,3);
-    // JtSJ(3,4) = J.block<3,1>(0,3).transpose()*SJ.block<3,1>(0,4);
-    // JtSJ(3,5) = J.block<3,1>(0,3).transpose()*SJ.block<3,1>(0,5);
-
-    // JtSJ(4,4) = J.block<3,1>(0,4).transpose()*SJ.block<3,1>(0,4);
-    // JtSJ(4,5) = J.block<3,1>(0,4).transpose()*SJ.block<3,1>(0,5);
-
-    // JtSJ(5,5) = J.block<3,1>(0,5).transpose()*SJ.block<3,1>(0,5);
-
-    // Filling symmetric elements
-    JtSJ(1, 0) = JtSJ(0, 1);
-    JtSJ(2, 0) = JtSJ(0, 2);
-    JtSJ(3, 0) = JtSJ(0, 3);
-    JtSJ(4, 0) = JtSJ(0, 4);
-    JtSJ(5, 0) = JtSJ(0, 5);
-
-    JtSJ(2, 1) = JtSJ(1, 2);
-    JtSJ(3, 1) = JtSJ(1, 3);
-    JtSJ(4, 1) = JtSJ(1, 4);
-    JtSJ(5, 1) = JtSJ(1, 5);
-
-    JtSJ(3, 2) = JtSJ(2, 3);
-    JtSJ(4, 2) = JtSJ(2, 4);
-    JtSJ(5, 2) = JtSJ(2, 5);
-
-    JtSJ(4, 3) = JtSJ(3, 4);
-    JtSJ(5, 3) = JtSJ(3, 5);
-
-    JtSJ(5, 4) = JtSJ(4, 5);
-  }
-
   template <typename T>
-  void PoseOptimizer::se3Exp(const Eigen::Matrix<T, 6, 1> &xi, Eigen::Transform<T, 3, 1> &pose)
+  void PoseOnlyBundleAdjustmentSolver::CalculateMatrixExpoenetial_se3(const Eigen::Matrix<T, 6, 1> &xi, Eigen::Transform<T, 3, 1> &pose)
   {
     // initialize variables
     T theta = 0.0;
@@ -1546,7 +1275,7 @@ namespace analytic_solver
   }
 
   template <typename T>
-  void PoseOptimizer::so3Exp(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R)
+  void PoseOnlyBundleAdjustmentSolver::CalculateMatrixExpoenetial_so3(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R)
   {
     // initialize variables
     T theta = 0.0;
@@ -1569,22 +1298,22 @@ namespace analytic_solver
     }
   }
 
-  inline void PoseOptimizer::WarpPointList(
+  inline void PoseOnlyBundleAdjustmentSolver::WarpPositionList(
       const Eigen::Isometry3f &pose_target_to_initial,
       const std::vector<Eigen::Vector3f> &initial_position_list,
-      std::vector<Eigen::Vector3f> &warped_target_position_list)
+      std::vector<Eigen::Vector3f> &warped_position_list)
   {
     const size_t num_data = initial_position_list.size();
-    warped_target_position_list.reserve(num_data);
-    warped_target_position_list.resize(num_data);
+    warped_position_list.reserve(num_data);
+    warped_position_list.resize(num_data);
     for (size_t index = 0; index < num_data; ++index)
     {
       const auto &initial_position = initial_position_list[index];
-      warped_target_position_list[index] = pose_target_to_initial * initial_position;
+      warped_position_list[index] = pose_target_to_initial * initial_position;
     }
   }
 
-  inline void PoseOptimizer::ComputeJacobianResidual_ReprojectionError_6Dof(
+  inline void PoseOnlyBundleAdjustmentSolver::ComputeJacobianResidual_ReprojectionError_6Dof(
       const Eigen::Vector3f &local_position,
       const Eigen::Vector2f &matched_pixel,
       const float fx, const float fy, const float cx, const float cy,
@@ -1621,7 +1350,7 @@ namespace analytic_solver
     jacobian_matrix_y_transpose(5) = fy * x_inverse_z;
   }
 
-  inline void PoseOptimizer::ComputeGradientHessian_ReprojectionError_6Dof(
+  inline void PoseOnlyBundleAdjustmentSolver::ComputeGradientHessian_ReprojectionError_6Dof(
       const Eigen::Matrix<float, 6, 1> &jacobian_matrix_u_transpose,
       const Eigen::Matrix<float, 6, 1> &jacobian_matrix_v_transpose,
       const Eigen::Matrix<float, 2, 1> &residual_vector,
@@ -1655,7 +1384,7 @@ namespace analytic_solver
       const auto error_u = weight_residual_u * residual_u;
       this->CalcJtWJ_x_6Dof(weight, Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_u * Jt_u;
 
       JtJ_tmp.setZero();
@@ -1663,7 +1392,7 @@ namespace analytic_solver
       const auto error_v = weight_residual_v * residual_v;
       this->CalcJtWJ_y_6Dof(weight, Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_v * Jt_v;
       error += error_u;
     }
@@ -1674,20 +1403,20 @@ namespace analytic_solver
       const auto error_u = residual_u * residual_u;
       this->CalcJtJ_x_6Dof(Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_u * Jt_u;
 
       JtJ_tmp.setZero();
       const auto error_v = residual_v * residual_v;
       this->CalcJtJ_y_6Dof(Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_v * Jt_v;
       error += error_v;
     }
   }
 
-  inline void PoseOptimizer::ComputeJacobianResidual_ReprojectionError_Planar3Dof(
+  inline void PoseOnlyBundleAdjustmentSolver::ComputeJacobianResidual_ReprojectionError_Planar3Dof(
       const Eigen::Vector3f &target_local_position,
       const Eigen::Vector3f &world_position,
       const Eigen::Vector2f &matched_pixel,
@@ -1747,7 +1476,7 @@ namespace analytic_solver
     jacobian_matrix_v_transpose(1) = beta_1_r22 + beta_2_r32;
     jacobian_matrix_v_transpose(2) = jacobian_matrix_v_transpose(0) * A + jacobian_matrix_v_transpose(1) * B;
   }
-  inline void PoseOptimizer::ComputeGradientHessian_ReprojectionError_Planar3Dof(
+  inline void PoseOnlyBundleAdjustmentSolver::ComputeGradientHessian_ReprojectionError_Planar3Dof(
       const Eigen::Matrix<float, 3, 1> &jacobian_matrix_u_transpose,
       const Eigen::Matrix<float, 3, 1> &jacobian_matrix_v_transpose,
       const Eigen::Matrix<float, 2, 1> &residual_vector,
@@ -1779,17 +1508,17 @@ namespace analytic_solver
       JtJ_tmp.setZero();
       const auto weight_residual_u = weight * residual_u;
       const auto error_u = weight_residual_u * residual_u;
-      this->CalcJtWJ_3Dof(weight, Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalcJtWJ_Planar3Dof(weight, Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_3Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_u * Jt_u;
 
       JtJ_tmp.setZero();
       const auto weight_residual_v = weight * residual_v;
       const auto error_v = weight_residual_v * residual_v;
-      this->CalcJtWJ_3Dof(weight, Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalcJtWJ_Planar3Dof(weight, Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_3Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_v * Jt_v;
       error += error_u;
     }
@@ -1798,16 +1527,16 @@ namespace analytic_solver
       Eigen::Matrix<float, 3, 3> JtJ_tmp;
       JtJ_tmp.setZero();
       const auto error_u = residual_u * residual_u;
-      this->CalcJtJ_3Dof(Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalcJtJ_Planar3Dof(Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_3Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_u * Jt_u;
 
       JtJ_tmp.setZero();
       const auto error_v = residual_v * residual_v;
-      this->CalcJtJ_3Dof(Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalcJtJ_Planar3Dof(Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessianOnlyUpperTriangle_3Dof(JtJ_tmp, JtWJ);
+      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_v * Jt_v;
       error += error_v;
     }
