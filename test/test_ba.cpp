@@ -16,7 +16,7 @@
 #include "core/full_bundle_adjustment_solver.h"
 
 using Numeric = float;
-bool in_image(const ba_solver::_BA_Pixel &pixel, const int n_cols, const int n_rows)
+bool in_image(const analytic_solver::_BA_Pixel &pixel, const int n_cols, const int n_rows)
 {
   return (pixel.x() < n_cols && pixel.x() > 0 && pixel.y() < n_rows && pixel.y() > 0);
 };
@@ -26,7 +26,7 @@ struct Frame
   int id;
   Eigen::Transform<Numeric, 3, 1> pose;
   std::vector<int> observed_landmark_id_list;
-  std::vector<ba_solver::_BA_Pixel> observed_pixel_list;
+  std::vector<analytic_solver::_BA_Pixel> observed_pixel_list;
 };
 
 struct StereoFrame
@@ -37,12 +37,12 @@ struct StereoFrame
   struct
   {
     std::vector<int> landmark_id_list;
-    std::vector<ba_solver::_BA_Pixel> pixel_list;
+    std::vector<analytic_solver::_BA_Pixel> pixel_list;
   } left;
   struct
   {
     std::vector<int> landmark_id_list;
-    std::vector<ba_solver::_BA_Pixel> pixel_list;
+    std::vector<analytic_solver::_BA_Pixel> pixel_list;
   } right;
 };
 
@@ -80,7 +80,7 @@ std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()
   return true_world_position_list;
 }
 
-void GetStereoInstrinsicAndExtrinsic(ba_solver::_BA_Camera &camera_left, ba_solver::_BA_Camera &camera_right)
+void GetStereoInstrinsicAndExtrinsic(analytic_solver::_BA_Camera &camera_left, analytic_solver::_BA_Camera &camera_right)
 {
   Eigen::Transform<Numeric, 3, 1> pose_left_to_right;
   pose_left_to_right.linear() = Eigen::Matrix<Numeric, 3, 3>::Identity();
@@ -119,10 +119,10 @@ int main()
   std::uniform_real_distribution<float> point_err(-point_error_level, point_error_level);
   std::uniform_real_distribution<float> position_err(-position_error_level, position_error_level);
 
-  ba_solver::_BA_Camera cam_left, cam_right;
+  analytic_solver::_BA_Camera cam_left, cam_right;
   GetStereoInstrinsicAndExtrinsic(cam_left, cam_right);
 
-  std::vector<ba_solver::_BA_Camera> camera_list;
+  std::vector<analytic_solver::_BA_Camera> camera_list;
   camera_list.push_back(cam_left);
   camera_list.push_back(cam_right);
 
@@ -187,7 +187,7 @@ int main()
 
       const auto local_position = T_cw * Xi;
       const float inverse_z_left = 1.0 / local_position(2);
-      ba_solver::_BA_Pixel pixel_left;
+      analytic_solver::_BA_Pixel pixel_left;
       pixel_left.x() = camera_list[0].fx * local_position(0) * inverse_z_left + camera_list[0].cx + pixel_err(gen);
       pixel_left.y() = camera_list[0].fy * local_position(1) * inverse_z_left + camera_list[0].cy + pixel_err(gen);
 
@@ -200,7 +200,7 @@ int main()
 
       const auto right_position = camera_list[1].pose_this_to_cam0 * local_position;
       const float inverse_z_right = 1.0 / right_position(2);
-      ba_solver::_BA_Pixel pixel_right;
+      analytic_solver::_BA_Pixel pixel_right;
       pixel_right.x() = camera_list[1].fx * right_position(0) * inverse_z_right + camera_list[1].cx + pixel_err(gen);
       pixel_right.y() = camera_list[1].fy * right_position(1) * inverse_z_right + camera_list[1].cy + pixel_err(gen);
 
@@ -219,7 +219,7 @@ int main()
   }
 
   // Solve problem
-  ba_solver::FullBundleAdjustmentSolver ba_solver;
+  analytic_solver::FullBundleAdjustmentSolver ba_solver;
   for (const auto &camera : camera_list)
     ba_solver.AddCamera(camera);
 
@@ -277,10 +277,10 @@ int main()
   //             << est_pose.translation().transpose() << "\n";
   // }
 
-  ba_solver::Options options;
+  analytic_solver::Options options;
   options.iteration_handle.max_num_iterations = 3000;
   // options.trust_region_handle.initial_lambda = 100.0;
-  ba_solver::Summary summary;
+  analytic_solver::Summary summary;
   ba_solver.Solve(options, &summary);
 
   std::cout << summary.BriefReport() << std::endl;

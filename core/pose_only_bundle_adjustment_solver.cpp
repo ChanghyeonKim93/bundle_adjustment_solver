@@ -1,55 +1,15 @@
 #include "pose_only_bundle_adjustment_solver.h"
-namespace analytic_solver
-{
-  std::string Summary::BriefReport()
-  {
-    const auto default_precision{std::cout.precision()};
-    std::stringstream ss;
-    ss << "iter ";              // 5
-    ss << "     cost     ";     // 14
-    ss << " cost_change ";      // 13
-    ss << "  |step|  ";         // 10
-    ss << " |gradient| ";       // 12
-    ss << " iter_time [ms] \n"; // 11
-
-    const size_t num_iterations = optimization_info_list_.size();
-    for (size_t iteration = 0; iteration < num_iterations; ++iteration)
-    {
-      const OptimizationInfo &optimization_info = optimization_info_list_[iteration];
-      ss << std::setw(4) << iteration << " ";
-      ss << " " << std::scientific << optimization_info.cost;
-      ss << "    " << std::setprecision(2) << std::scientific << optimization_info.cost_change;
-      ss << "   " << std::setprecision(2) << std::scientific << optimization_info.abs_step;
-      ss << "   " << std::setprecision(2) << std::scientific << optimization_info.abs_gradient;
-      ss << "      " << std::setprecision(2) << std::scientific << optimization_info.iter_time << "\n";
-      ss << std::setprecision(default_precision); // restore defaults
-    }
-    ss << std::setprecision(5);
-    ss << "Analytic Solver Report: Iterations: " << num_iterations << ", Total time [ms]: " << total_time_in_millisecond_ << ", Initial cost: " << optimization_info_list_.front().cost << ", Final cost: " << optimization_info_list_.back().cost;
-    ss << ", Termination : " << (convergence_status_ ? "CONVERGENCE" : "NO_CONVERGENCE") << "\n";
-    if (max_iteration_ == num_iterations)
-      ss << " WARNIING: MAX ITERATION is reached ! The solution could be local minima.\n";
-    ss << std::setprecision(default_precision); // restore defaults
-    return ss.str();
-  }
-  Summary::Summary() {}
-  Summary::~Summary() {}
-  const double Summary::GetTotalTimeInSecond() const
-  {
-    return total_time_in_millisecond_ * 0.001;
-  }
-};
 
 namespace analytic_solver
 {
   PoseOnlyBundleAdjustmentSolver::PoseOnlyBundleAdjustmentSolver() {}
   PoseOnlyBundleAdjustmentSolver::~PoseOnlyBundleAdjustmentSolver() {}
 
-  bool PoseOnlyBundleAdjustmentSolver::SolveMonocular_6Dof(
-      const std::vector<Eigen::Vector3f> &world_position_list,
+  bool PoseOnlyBundleAdjustmentSolver::Solve_Monocular_6Dof(
+      const std::vector<Eigen::Vector3f> &reference_position_list,
       const std::vector<Eigen::Vector2f> &matched_pixel_list,
       const float fx, const float fy, const float cx, const float cy,
-      Eigen::Isometry3f &pose_world_to_current_frame,
+      Eigen::Isometry3f &reference_to_current_pose,
       std::vector<bool> &mask_inlier,
       Options options,
       Summary *summary)
@@ -68,12 +28,12 @@ namespace analytic_solver
       summary->convergence_status_ = true;
     }
     debug_poses_.resize(0);
-    if (world_position_list.size() != matched_pixel_list.size())
+    if (reference_position_list.size() != matched_pixel_list.size())
       throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveMonocularPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != current_pixel_list.size()");
 
     bool is_success = true;
 
-    const size_t n_pts = world_position_list.size();
+    const size_t n_pts = reference_position_list.size();
     const float inverse_n_pts = 1.0f / static_cast<float>(n_pts);
     mask_inlier.resize(n_pts, true);
 
@@ -83,7 +43,7 @@ namespace analytic_solver
     const auto &THRES_DELTA_ERROR = threshold_convergence_delta_error;
     const auto &THRES_REPROJ_ERROR = threshold_outlier_reproj_error; // pixels
 
-    Eigen::Isometry3f pose_camera_to_world_optimized = pose_world_to_current_frame.inverse();
+    Eigen::Isometry3f pose_camera_to_world_optimized = reference_to_current_pose.inverse();
 
     stopwatch.Start();
     bool is_converged = true;
@@ -98,7 +58,7 @@ namespace analytic_solver
       mJtWr.setZero();
 
       // Warp and project 3d point & calculate error
-      WarpPositionList(pose_camera_to_world_optimized, world_position_list,
+      WarpPositionList(pose_camera_to_world_optimized, reference_position_list,
                        warped_local_position_list);
       float err_curr = 0.0f;
       size_t count_invalid = 0;
@@ -126,7 +86,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i;
-        AddHessian_OnlyUpperTriangle_6Dof(hessian_i, JtWJ);
+        AppendToHessian_OnlyUpperTriangle_6Dof(hessian_i, JtWJ);
         err_curr += error_i;
 
         // Outlier rejection
@@ -160,21 +120,35 @@ namespace analytic_solver
       if (iteration == MAX_ITERATION - 1)
         is_converged = false;
 
-      // Go to next step
-      err_prev = err_curr;
-
       const double iter_time = stopwatch.GetLapTimeFromLatest();
+
+      iteration_status_enum iter_status;
+      iter_status = iteration_status_enum::UPDATE;
       if (summary != nullptr)
       {
         OptimizationInfo optimization_info;
         optimization_info.cost = err_curr;
         optimization_info.cost_change = abs(delta_error);
+        optimization_info.average_reprojection_error = err_curr;
+
         optimization_info.abs_step = delta_xi.norm();
         optimization_info.abs_gradient = 0;
+        optimization_info.damping_term = -1;
         optimization_info.iter_time = iter_time;
+        optimization_info.iteration_status = iter_status;
+
+        if (optimization_info.iteration_status == iteration_status_enum::SKIPPED)
+        {
+          optimization_info.cost = err_prev;
+          optimization_info.cost_change = 0;
+          optimization_info.average_reprojection_error = err_prev;
+        }
 
         summary->optimization_info_list_.push_back(optimization_info);
       }
+
+      // Go to next step
+      err_prev = err_curr;
     }
 
     const double total_time = stopwatch.GetLapTimeFromStart();
@@ -186,7 +160,7 @@ namespace analytic_solver
 
     if (!std::isnan(pose_camera_to_world_optimized.linear().norm()))
     {
-      pose_world_to_current_frame = pose_camera_to_world_optimized.inverse();
+      reference_to_current_pose = pose_camera_to_world_optimized.inverse();
     }
     else
     {
@@ -199,14 +173,14 @@ namespace analytic_solver
     return is_success;
   }
 
-  bool PoseOnlyBundleAdjustmentSolver::SolveStereo_6Dof(
-      const std::vector<Eigen::Vector3f> &world_position_list,
+  bool PoseOnlyBundleAdjustmentSolver::Solve_Stereo_6Dof(
+      const std::vector<Eigen::Vector3f> &reference_position_list,
       const std::vector<Eigen::Vector2f> &matched_left_pixel_list,
       const std::vector<Eigen::Vector2f> &matched_right_pixel_list,
       const float fx_left, const float fy_left, const float cx_left, const float cy_left,
       const float fx_right, const float fy_right, const float cx_right, const float cy_right,
-      const Eigen::Isometry3f &pose_left_to_right,
-      Eigen::Isometry3f &pose_world_to_left_current_frame,
+      const Eigen::Isometry3f &left_to_right_pose,
+      Eigen::Isometry3f &reference_to_current_left_pose,
       std::vector<bool> &mask_inlier_left,
       std::vector<bool> &mask_inlier_right,
       Options options,
@@ -227,14 +201,14 @@ namespace analytic_solver
       summary->convergence_status_ = true;
     }
     debug_poses_.resize(0);
-    if (world_position_list.size() != matched_left_pixel_list.size())
+    if (reference_position_list.size() != matched_left_pixel_list.size())
       throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveStereoPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != left_current_pixel_list.size()");
-    if (world_position_list.size() != matched_right_pixel_list.size())
+    if (reference_position_list.size() != matched_right_pixel_list.size())
       throw std::runtime_error("In PoseOnlyBundleAdjustmentSolver::SolveStereoPoseOnlyBundleAdjustment6Dof(), world_position_list.size() != right_current_pixel_list.size()");
 
     bool is_success = true;
 
-    const size_t n_pts = world_position_list.size();
+    const size_t n_pts = reference_position_list.size();
     mask_inlier_left.resize(n_pts, true);
     mask_inlier_right.resize(n_pts, true);
 
@@ -244,8 +218,8 @@ namespace analytic_solver
     const auto &THRES_DELTA_ERROR = threshold_convergence_delta_error;
     const auto &THRES_REPROJ_ERROR = threshold_outlier_reproj_error; // pixels
 
-    const Eigen::Isometry3f pose_right_to_left = pose_left_to_right.inverse();
-    Eigen::Isometry3f pose_camera_to_world_optimized = pose_world_to_left_current_frame.inverse();
+    const Eigen::Isometry3f pose_right_to_left = left_to_right_pose.inverse();
+    Eigen::Isometry3f pose_camera_to_world_optimized = reference_to_current_left_pose.inverse();
 
     stopwatch.Start();
     bool is_converged = true;
@@ -263,7 +237,7 @@ namespace analytic_solver
       const Eigen::Isometry3f pose_right_camera_to_world_optimized = pose_right_to_left * pose_camera_to_world_optimized;
 
       // Warp and project 3d point & calculate error
-      WarpPositionList(pose_camera_to_world_optimized, world_position_list,
+      WarpPositionList(pose_camera_to_world_optimized, reference_position_list,
                        warped_left_position_list);
       WarpPositionList(pose_right_to_left, warped_left_position_list,
                        warped_right_position_list);
@@ -299,7 +273,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_left;
-        AddHessian_OnlyUpperTriangle_6Dof(hessian_i_left, JtWJ);
+        AppendToHessian_OnlyUpperTriangle_6Dof(hessian_i_left, JtWJ);
         err_curr += error_i_left;
 
         // Outlier rejection
@@ -333,7 +307,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_right;
-        AddHessian_OnlyUpperTriangle_6Dof(hessian_i_right, JtWJ);
+        AppendToHessian_OnlyUpperTriangle_6Dof(hessian_i_right, JtWJ);
         err_curr += error_i_right;
 
         // Outlier rejection
@@ -368,20 +342,35 @@ namespace analytic_solver
       if (iter == MAX_ITERATION - 1)
         is_converged = false;
 
-      err_prev = err_curr;
-
       const double iter_time = stopwatch.GetLapTimeFromLatest();
+
+      iteration_status_enum iter_status;
+      iter_status = iteration_status_enum::UPDATE;
       if (summary != nullptr)
       {
         OptimizationInfo optimization_info;
         optimization_info.cost = err_curr;
         optimization_info.cost_change = abs(delta_error);
+        optimization_info.average_reprojection_error = err_curr;
+
         optimization_info.abs_step = delta_xi.norm();
         optimization_info.abs_gradient = 0;
+        optimization_info.damping_term = -1;
         optimization_info.iter_time = iter_time;
+        optimization_info.iteration_status = iter_status;
+
+        if (optimization_info.iteration_status == iteration_status_enum::SKIPPED)
+        {
+          optimization_info.cost = err_prev;
+          optimization_info.cost_change = 0;
+          optimization_info.average_reprojection_error = err_prev;
+        }
 
         summary->optimization_info_list_.push_back(optimization_info);
       }
+
+      // Go to next step
+      err_prev = err_curr;
     }
 
     const double total_time = stopwatch.GetLapTimeFromStart();
@@ -393,7 +382,7 @@ namespace analytic_solver
 
     if (!std::isnan(pose_camera_to_world_optimized.linear().norm()))
     {
-      pose_world_to_left_current_frame = pose_camera_to_world_optimized.inverse();
+      reference_to_current_left_pose = pose_camera_to_world_optimized.inverse();
     }
     else
     {
@@ -406,7 +395,7 @@ namespace analytic_solver
     return is_success;
   }
 
-  bool PoseOnlyBundleAdjustmentSolver::SolveMonocular_Planar3Dof(
+  bool PoseOnlyBundleAdjustmentSolver::Solve_Monocular_Planar3Dof(
       const std::vector<Eigen::Vector3f> &world_position_list,
       const std::vector<Eigen::Vector2f> &matched_pixel_list,
       const float fx, const float fy, const float cx, const float cy,
@@ -524,7 +513,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i;
-        AddHessian_OnlyUpperTriangle_Planar3Dof(hessian_i, JtWJ);
+        AppendToHessian_OnlyUpperTriangle_Planar3Dof(hessian_i, JtWJ);
         err_curr += error_i;
 
         // Outlier rejection
@@ -570,20 +559,36 @@ namespace analytic_solver
       {
         is_converged = false;
       }
-      err_prev = err_curr;
 
       const double iter_time = stopwatch.GetLapTimeFromLatest();
+
+      iteration_status_enum iter_status;
+      iter_status = iteration_status_enum::UPDATE;
       if (summary != nullptr)
       {
         OptimizationInfo optimization_info;
         optimization_info.cost = err_curr;
         optimization_info.cost_change = abs(delta_error);
+        optimization_info.average_reprojection_error = err_curr;
+
         optimization_info.abs_step = delta_param.norm();
         optimization_info.abs_gradient = 0;
+        optimization_info.damping_term = -1;
         optimization_info.iter_time = iter_time;
+        optimization_info.iteration_status = iter_status;
+
+        if (optimization_info.iteration_status == iteration_status_enum::SKIPPED)
+        {
+          optimization_info.cost = err_prev;
+          optimization_info.cost_change = 0;
+          optimization_info.average_reprojection_error = err_prev;
+        }
 
         summary->optimization_info_list_.push_back(optimization_info);
       }
+
+      // Go to next step
+      err_prev = err_curr;
     }
 
     const double total_time = stopwatch.GetLapTimeFromStart();
@@ -608,16 +613,16 @@ namespace analytic_solver
     return is_success;
   }
 
-  bool PoseOnlyBundleAdjustmentSolver::SolveStereo_Planar3Dof(
+  bool PoseOnlyBundleAdjustmentSolver::Solve_Stereo_Planar3Dof(
       const std::vector<Eigen::Vector3f> &world_position_list,
       const std::vector<Eigen::Vector2f> &matched_left_pixel_list,
       const std::vector<Eigen::Vector2f> &matched_right_pixel_list,
       const float fx_left, const float fy_left, const float cx_left, const float cy_left,
       const float fx_right, const float fy_right, const float cx_right, const float cy_right,
-      const Eigen::Isometry3f &pose_base_to_camera,
-      const Eigen::Isometry3f &pose_left_to_right,
-      const Eigen::Isometry3f &pose_world_to_last,
-      Eigen::Isometry3f &pose_world_to_current,
+      const Eigen::Isometry3f &base_to_camera_pose,
+      const Eigen::Isometry3f &left_to_right_pose,
+      const Eigen::Isometry3f &world_to_last_pose,
+      Eigen::Isometry3f &world_to_current_pose,
       std::vector<bool> &mask_inlier_left,
       std::vector<bool> &mask_inlier_right,
       Options options,
@@ -654,15 +659,15 @@ namespace analytic_solver
     const auto &THRES_DELTA_ERROR = threshold_convergence_delta_error;
     const auto &THRES_REPROJ_ERROR = threshold_outlier_reproj_error; // pixels
 
-    const Eigen::Isometry3f pose_right_to_left = pose_left_to_right.inverse();
-    const Eigen::Isometry3f pose_camera_to_base = pose_base_to_camera.inverse();
+    const Eigen::Isometry3f pose_right_to_left = left_to_right_pose.inverse();
+    const Eigen::Isometry3f pose_camera_to_base = base_to_camera_pose.inverse();
     const Eigen::Matrix3f rotation_left_camera_to_base = pose_camera_to_base.linear();
     const Eigen::Matrix3f rotation_right_camera_to_base = pose_right_to_left.linear() * pose_camera_to_base.linear();
 
     // Warp the world position to the last frame
     const Eigen::Isometry3f pose_c2c1_prior =
-        pose_world_to_current.inverse() * pose_world_to_last;
-    const Eigen::Isometry3f pose_b2b1 = pose_base_to_camera * pose_c2c1_prior * pose_camera_to_base;
+        world_to_current_pose.inverse() * world_to_last_pose;
+    const Eigen::Isometry3f pose_b2b1 = base_to_camera_pose * pose_c2c1_prior * pose_camera_to_base;
 
     // calculate prior theta_21 = [x_21, y_21, psi_21]^T
     const auto &R_b2b1 = pose_b2b1.linear();
@@ -671,7 +676,7 @@ namespace analytic_solver
     const float y_21_initial_value = pose_b2b1.translation().y();
     const float psi_21_initial_value = atan2(i2(1), i2(0));
 
-    Eigen::Isometry3f pose_world_to_current_optimized = pose_world_to_current;
+    Eigen::Isometry3f pose_world_to_current_optimized = world_to_current_pose;
     Eigen::Vector3f parameter_b2b1_optimized;
     parameter_b2b1_optimized(0) = x_21_initial_value;
     parameter_b2b1_optimized(1) = y_21_initial_value;
@@ -748,7 +753,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_left;
-        AddHessian_OnlyUpperTriangle_Planar3Dof(hessian_i_left, JtWJ);
+        AppendToHessian_OnlyUpperTriangle_Planar3Dof(hessian_i_left, JtWJ);
         err_curr += error_i_left;
 
         // Outlier rejection
@@ -784,7 +789,7 @@ namespace analytic_solver
 
         // Add gradient and Hessian to original matrix
         mJtWr.noalias() -= gradient_i_right;
-        AddHessian_OnlyUpperTriangle_Planar3Dof(hessian_i_right, JtWJ);
+        AppendToHessian_OnlyUpperTriangle_Planar3Dof(hessian_i_right, JtWJ);
         err_curr += error_i_right;
 
         // Outlier rejection
@@ -814,7 +819,7 @@ namespace analytic_solver
       parameter_b2b1_optimized(1) = pose_b2b1_optimized.translation().y();
       parameter_b2b1_optimized(2) += delta_psi;
 
-      pose_world_to_current_optimized = pose_b2b1_optimized.inverse() * pose_base_to_camera;
+      pose_world_to_current_optimized = pose_b2b1_optimized.inverse() * base_to_camera_pose;
       debug_poses_.push_back(pose_world_to_current_optimized);
 
       err_curr /= (count_left_edge + count_right_edge) * 0.5f;
@@ -833,17 +838,33 @@ namespace analytic_solver
       err_prev = err_curr;
 
       const double iter_time = stopwatch.GetLapTimeFromLatest();
+      iteration_status_enum iter_status;
+      iter_status = iteration_status_enum::UPDATE;
       if (summary != nullptr)
       {
         OptimizationInfo optimization_info;
         optimization_info.cost = err_curr;
         optimization_info.cost_change = abs(delta_error);
+        optimization_info.average_reprojection_error = err_curr;
+
         optimization_info.abs_step = delta_param.norm();
         optimization_info.abs_gradient = 0;
+        optimization_info.damping_term = -1;
         optimization_info.iter_time = iter_time;
+        optimization_info.iteration_status = iter_status;
+
+        if (optimization_info.iteration_status == iteration_status_enum::SKIPPED)
+        {
+          optimization_info.cost = err_prev;
+          optimization_info.cost_change = 0;
+          optimization_info.average_reprojection_error = err_prev;
+        }
 
         summary->optimization_info_list_.push_back(optimization_info);
       }
+
+      // Go to next step
+      err_prev = err_curr;
     }
 
     const double total_time = stopwatch.GetLapTimeFromStart();
@@ -855,7 +876,7 @@ namespace analytic_solver
 
     if (!std::isnan(pose_b2b1_optimized.linear().norm()))
     {
-      pose_world_to_current = pose_world_to_current_optimized;
+      world_to_current_pose = pose_world_to_current_optimized;
     }
     else
     {
@@ -867,12 +888,12 @@ namespace analytic_solver
     return is_success;
   }
 
-  std::vector<Eigen::Isometry3f> PoseOnlyBundleAdjustmentSolver::GetDebugPoses()
+  const std::vector<Eigen::Isometry3f> &PoseOnlyBundleAdjustmentSolver::GetDebugPoses() const
   {
     return debug_poses_;
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::CalcJtJ_x_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalculateJtJ_x_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -928,7 +949,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::CalcJtJ_y_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalculateJtJ_y_6Dof(const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -984,7 +1005,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::CalcJtWJ_x_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalculateJtWJ_x_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1046,7 +1067,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::CalcJtWJ_y_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalculateJtWJ_y_6Dof(const float weight, const Eigen::Matrix<float, 6, 1> &Jt, Eigen::Matrix<float, 6, 6> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1108,7 +1129,7 @@ namespace analytic_solver
     JtJ_tmp(5, 4) = JtJ_tmp(4, 5);
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::AddHessian_OnlyUpperTriangle_6Dof(const Eigen::Matrix<float, 6, 6> &JtJ_tmp, Eigen::Matrix<float, 6, 6> &JtJ)
+  inline void PoseOnlyBundleAdjustmentSolver::AppendToHessian_OnlyUpperTriangle_6Dof(const Eigen::Matrix<float, 6, 6> &JtJ_tmp, Eigen::Matrix<float, 6, 6> &JtJ)
   {
     JtJ(0, 0) += JtJ_tmp(0, 0);
     JtJ(0, 1) += JtJ_tmp(0, 1);
@@ -1161,7 +1182,7 @@ namespace analytic_solver
     JtJ(5, 4) = JtJ(4, 5);
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::CalcJtJ_Planar3Dof(const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalculateJtJ_Planar3Dof(const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1184,7 +1205,7 @@ namespace analytic_solver
     JtJ_tmp(2, 1) = JtJ_tmp(1, 2);
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::CalcJtWJ_Planar3Dof(const float weight, const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
+  inline void PoseOnlyBundleAdjustmentSolver::CalculateJtWJ_Planar3Dof(const float weight, const Eigen::Matrix<float, 3, 1> &Jt, Eigen::Matrix<float, 3, 3> &JtJ_tmp)
   {
     JtJ_tmp.setZero();
 
@@ -1213,7 +1234,7 @@ namespace analytic_solver
     JtJ_tmp(2, 1) = JtJ_tmp(1, 2);
   }
 
-  inline void PoseOnlyBundleAdjustmentSolver::AddHessian_OnlyUpperTriangle_Planar3Dof(const Eigen::Matrix<float, 3, 3> &JtJ_tmp, Eigen::Matrix<float, 3, 3> &JtJ)
+  inline void PoseOnlyBundleAdjustmentSolver::AppendToHessian_OnlyUpperTriangle_Planar3Dof(const Eigen::Matrix<float, 3, 3> &JtJ_tmp, Eigen::Matrix<float, 3, 3> &JtJ)
   {
     JtJ(0, 0) += JtJ_tmp(0, 0);
     JtJ(0, 1) += JtJ_tmp(0, 1);
@@ -1293,8 +1314,8 @@ namespace analytic_solver
     }
     else
     {
-      double invtheta2 = 1.0 / (theta * theta);
-      R = Eigen::Matrix<T, 3, 3>::Identity() + (sin(theta) / theta) * wx + ((1 - cos(theta)) * invtheta2) * wxwx;
+      const double invtheta2 = 1.0 / (theta * theta);
+      R = Eigen::Matrix<T, 3, 3>::Identity() + (sin(theta) / theta) * wx + ((1.0 - cos(theta)) * invtheta2) * wxwx;
     }
   }
 
@@ -1304,7 +1325,6 @@ namespace analytic_solver
       std::vector<Eigen::Vector3f> &warped_position_list)
   {
     const size_t num_data = initial_position_list.size();
-    warped_position_list.reserve(num_data);
     warped_position_list.resize(num_data);
     for (size_t index = 0; index < num_data; ++index)
     {
@@ -1382,17 +1402,17 @@ namespace analytic_solver
       JtJ_tmp.setZero();
       const auto weight_residual_u = weight * residual_u;
       const auto error_u = weight_residual_u * residual_u;
-      this->CalcJtWJ_x_6Dof(weight, Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtWJ_x_6Dof(weight, Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_u * Jt_u;
 
       JtJ_tmp.setZero();
       const auto weight_residual_v = weight * residual_v;
       const auto error_v = weight_residual_v * residual_v;
-      this->CalcJtWJ_y_6Dof(weight, Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtWJ_y_6Dof(weight, Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_v * Jt_v;
       error += error_u;
     }
@@ -1401,16 +1421,16 @@ namespace analytic_solver
       Eigen::Matrix<float, 6, 6> JtJ_tmp;
       JtJ_tmp.setZero();
       const auto error_u = residual_u * residual_u;
-      this->CalcJtJ_x_6Dof(Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtJ_x_6Dof(Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_u * Jt_u;
 
       JtJ_tmp.setZero();
       const auto error_v = residual_v * residual_v;
-      this->CalcJtJ_y_6Dof(Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtJ_y_6Dof(Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_6Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_v * Jt_v;
       error += error_v;
     }
@@ -1508,17 +1528,17 @@ namespace analytic_solver
       JtJ_tmp.setZero();
       const auto weight_residual_u = weight * residual_u;
       const auto error_u = weight_residual_u * residual_u;
-      this->CalcJtWJ_Planar3Dof(weight, Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtWJ_Planar3Dof(weight, Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_u * Jt_u;
 
       JtJ_tmp.setZero();
       const auto weight_residual_v = weight * residual_v;
       const auto error_v = weight_residual_v * residual_v;
-      this->CalcJtWJ_Planar3Dof(weight, Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtWJ_Planar3Dof(weight, Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += weight_residual_v * Jt_v;
       error += error_u;
     }
@@ -1527,16 +1547,16 @@ namespace analytic_solver
       Eigen::Matrix<float, 3, 3> JtJ_tmp;
       JtJ_tmp.setZero();
       const auto error_u = residual_u * residual_u;
-      this->CalcJtJ_Planar3Dof(Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtJ_Planar3Dof(Jt_u, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_u * Jt_u;
 
       JtJ_tmp.setZero();
       const auto error_v = residual_v * residual_v;
-      this->CalcJtJ_Planar3Dof(Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
+      this->CalculateJtJ_Planar3Dof(Jt_v, JtJ_tmp); // JtWJ.noalias()  += weight*(Jt*Jt.transpose());
       // JtWJ.noalias() += JtJ_tmp;
-      AddHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
+      AppendToHessian_OnlyUpperTriangle_Planar3Dof(JtJ_tmp, JtWJ);
       JtWr.noalias() += residual_v * Jt_v;
       error += error_v;
     }
