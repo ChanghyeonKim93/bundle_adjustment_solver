@@ -97,7 +97,7 @@ int main()
     pose_world_to_current.translation().z() = -1.9;
 
     // Generate 3D points and projections
-    constexpr int num_points = 3000000;
+    constexpr int num_points = 300000;
     std::vector<Position> true_world_position_list;
     std::vector<Pixel> true_pixel_list;
     std::vector<Position> world_position_list;
