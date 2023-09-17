@@ -4,36 +4,33 @@
 #include <iostream>
 #include <vector>
 
-#include "eigen3/Eigen/Dense"
-#include "eigen3/Eigen/Geometry"
-
 #include "ceres/ceres.h"
 #include "ceres/rotation.h"
+#include "eigen3/Eigen/Dense"
+#include "eigen3/Eigen/Geometry"
 
 class ReprojectionCostFunctor_3dof_numerical;
 class ReprojectionCostFunctor_6dof_numerical;
 // class ReprojectionCostFunctor_6dof_analytic;
 
-class ReprojectionCostFunctor_3dof_numerical
-{
-public:
+class ReprojectionCostFunctor_3dof_numerical {
+ public:
   ReprojectionCostFunctor_3dof_numerical() = delete;
   // ## READ THIS!
-  // When the target camera is changed, you should call "SetCameraIntrinsicParameters()" to update the camera related parameters,
-  // such as 'camera_to_baselink_pose (fixed extrinsic pose)' and 'fx,fy,cx,cy (fixed intrinsics)'
-  ReprojectionCostFunctor_3dof_numerical(
-      const Eigen::Vector3d &world_position,
-      const Eigen::Vector2d &pixel_matched);
+  // When the target camera is changed, you should call "SetCameraIntrinsicParameters()" to update the camera related
+  // parameters, such as 'camera_to_baselink_pose (fixed extrinsic pose)' and 'fx,fy,cx,cy (fixed intrinsics)'
+  ReprojectionCostFunctor_3dof_numerical(const Eigen::Vector3d &world_position, const Eigen::Vector2d &pixel_matched);
 
   template <typename T>
-  bool operator()(const T *const relative_baselink_parameter,
-                  T *residuals) const
-  {
+  bool operator()(const T *const relative_baselink_parameter, T *residuals) const {
     const Eigen::Matrix3d camera_to_baselink_rotation = pose_camera_to_base_.linear();
     const Eigen::Vector3d camera_to_baselink_translation = pose_camera_to_base_.translation();
-    const double &r11 = camera_to_baselink_rotation(0, 0), &r12 = camera_to_baselink_rotation(0, 1), &r13 = camera_to_baselink_rotation(0, 2);
-    const double &r21 = camera_to_baselink_rotation(1, 0), &r22 = camera_to_baselink_rotation(1, 1), &r23 = camera_to_baselink_rotation(1, 2);
-    const double &r31 = camera_to_baselink_rotation(2, 0), &r32 = camera_to_baselink_rotation(2, 1), &r33 = camera_to_baselink_rotation(2, 2);
+    const double &r11 = camera_to_baselink_rotation(0, 0), &r12 = camera_to_baselink_rotation(0, 1),
+                 &r13 = camera_to_baselink_rotation(0, 2);
+    const double &r21 = camera_to_baselink_rotation(1, 0), &r22 = camera_to_baselink_rotation(1, 1),
+                 &r23 = camera_to_baselink_rotation(1, 2);
+    const double &r31 = camera_to_baselink_rotation(2, 0), &r32 = camera_to_baselink_rotation(2, 1),
+                 &r33 = camera_to_baselink_rotation(2, 2);
 
     // params: wx wy wz  tx ty rz
     T tx = relative_baselink_parameter[0];
@@ -68,11 +65,11 @@ public:
     return true;
   };
 
-private:
+ private:
   Eigen::Vector3d world_position_;
   Eigen::Vector2d pixel_matched_;
 
-public:
+ public:
   static void SetPoseBaseToCamera(const Eigen::Isometry3d &pose_base_to_camera);
   static void SetCameraIntrinsicParameters(const double fx, const double fy, const double cx, const double cy);
 
@@ -84,22 +81,17 @@ public:
   static double cy_;
 };
 
-class ReprojectionCostFunctor_6dof_numerical
-{
-public:
+class ReprojectionCostFunctor_6dof_numerical {
+ public:
   ReprojectionCostFunctor_6dof_numerical() = delete;
 
   // ## READ THIS!
-  // When the target camera is changed, you should call "SetCameraIntrinsicParameters()" to update the camera related parameters,
-  // such as 'camera_to_baselink_pose (fixed extrinsic pose)' and 'fx,fy,cx,cy (fixed intrinsics)'
-  ReprojectionCostFunctor_6dof_numerical(
-      const Eigen::Vector3d &world_position,
-      const Eigen::Vector2d &pixel_matched);
+  // When the target camera is changed, you should call "SetCameraIntrinsicParameters()" to update the camera related
+  // parameters, such as 'camera_to_baselink_pose (fixed extrinsic pose)' and 'fx,fy,cx,cy (fixed intrinsics)'
+  ReprojectionCostFunctor_6dof_numerical(const Eigen::Vector3d &world_position, const Eigen::Vector2d &pixel_matched);
 
   template <typename T>
-  bool operator()(const T *const params,
-                  T *residuals) const
-  {
+  bool operator()(const T *const params, T *residuals) const {
     // params: wx wy wz  tx ty rz
     T world_position[3];
     world_position[0] = T(world_position_(0));
@@ -122,13 +114,12 @@ public:
     return true;
   }
 
-private:
+ private:
   Eigen::Vector3d world_position_;
   Eigen::Vector2d pixel_matched_;
 
-public:
-  static void SetCameraIntrinsicParameters(
-      const double fx, const double fy, const double cx, const double cy);
+ public:
+  static void SetCameraIntrinsicParameters(const double fx, const double fy, const double cx, const double cy);
 
   static double fx_;
   static double fy_;

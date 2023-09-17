@@ -1,22 +1,17 @@
 #include <iostream>
-#include <vector>
 #include <random>
-
-#include "eigen3/Eigen/Dense"
-#include "eigen3/Eigen/Geometry"
-
-#include "opencv4/opencv2/core.hpp"
-#include "opencv4/opencv2/imgproc.hpp"
-#include "opencv4/opencv2/highgui.hpp"
-
-#include "core/util/timer.h"
+#include <vector>
 
 #include "core/hybrid_visual_odometry/pose_optimizer.h"
+#include "core/util/timer.h"
+#include "eigen3/Eigen/Dense"
+#include "eigen3/Eigen/Geometry"
+#include "opencv4/opencv2/core.hpp"
+#include "opencv4/opencv2/highgui.hpp"
+#include "opencv4/opencv2/imgproc.hpp"
 
-int main()
-{
-  try
-  {
+int main() {
+  try {
     Eigen::Isometry3f pose_left_to_right;
     pose_left_to_right.linear() = Eigen::Matrix3f::Identity();
     pose_left_to_right.translation().x() = 0.05;
@@ -58,8 +53,7 @@ int main()
     std::vector<Eigen::Vector3f> world_position_list;
     std::vector<Eigen::Vector2f> left_pixel_list;
     std::vector<Eigen::Vector2f> right_pixel_list;
-    for (size_t index = 0; index < num_points; ++index)
-    {
+    for (size_t index = 0; index < num_points; ++index) {
       Eigen::Vector3f world_position;
       world_position.x() = dist_x(gen);
       world_position.y() = dist_y(gen);
@@ -97,8 +91,7 @@ int main()
     pose_world_to_current_frame_initial_guess.translation().x() -= 0.2;
     pose_world_to_current_frame_initial_guess.translation().y() -= 0.5;
     pose_world_to_current_frame_optimized = pose_world_to_current_frame_initial_guess;
-    std::unique_ptr<analytic_solver::PoseOptimizer> pose_optimizer =
-        std::make_unique<analytic_solver::PoseOptimizer>();
+    std::unique_ptr<analytic_solver::PoseOptimizer> pose_optimizer = std::make_unique<analytic_solver::PoseOptimizer>();
     analytic_solver::Summary summary;
     analytic_solver::Options options;
     options.iteration_handle.max_num_iterations = 100;
@@ -109,17 +102,12 @@ int main()
     std::vector<bool> mask_inlier_left;
     std::vector<bool> mask_inlier_right;
     pose_optimizer->SolveStereoPoseOnlyBundleAdjustment6Dof(
-        world_position_list, left_pixel_list, right_pixel_list,
-        fx, fy, cx, cy,
-        fx, fy, cx, cy,
-        pose_left_to_right,
-        pose_world_to_current_frame_optimized,
-        mask_inlier_left, mask_inlier_right, options, &summary);
+        world_position_list, left_pixel_list, right_pixel_list, fx, fy, cx, cy, fx, fy, cx, cy, pose_left_to_right,
+        pose_world_to_current_frame_optimized, mask_inlier_left, mask_inlier_right, options, &summary);
 
     std::cout << summary.BriefReport() << std::endl;
 
-    std::vector<Eigen::Isometry3f>
-        debug_pose_list = pose_optimizer->GetDebugPoses();
+    std::vector<Eigen::Isometry3f> debug_pose_list = pose_optimizer->GetDebugPoses();
 
     // for (size_t iter = 0; iter < debug_pose_list.size(); ++iter)
     // {
@@ -167,9 +155,7 @@ int main()
         pose_world_to_current_frame_optimized.translation();
     std::cout << "Estimated:\n";
     std::cout << pose_optimized << std::endl;
-  }
-  catch (std::exception &e)
-  {
+  } catch (std::exception &e) {
     std::cout << "e.what(): " << e.what() << std::endl;
   }
 

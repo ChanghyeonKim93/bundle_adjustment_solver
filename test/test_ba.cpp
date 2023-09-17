@@ -2,59 +2,49 @@
 #include <random>
 #include <unordered_map>
 
+#include "core/full_bundle_adjustment_solver.h"
+#include "core/pose_only_bundle_adjustment_solver.h"
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
-
 #include "opencv4/opencv2/core.hpp"
-#include "opencv4/opencv2/imgproc.hpp"
 #include "opencv4/opencv2/highgui.hpp"
-
-#include "utility/timer.h"
+#include "opencv4/opencv2/imgproc.hpp"
 #include "utility/simd_library.h"
-
-#include "core/pose_only_bundle_adjustment_solver.h"
-#include "core/full_bundle_adjustment_solver.h"
+#include "utility/timer.h"
 
 using Numeric = float;
-bool in_image(const analytic_solver::_BA_Pixel &pixel, const int n_cols, const int n_rows)
-{
+bool in_image(const analytic_solver::_BA_Pixel &pixel, const int n_cols, const int n_rows) {
   return (pixel.x() < n_cols && pixel.x() > 0 && pixel.y() < n_rows && pixel.y() > 0);
 };
 
-struct Frame
-{
+struct Frame {
   int id;
   Eigen::Transform<Numeric, 3, 1> pose;
   std::vector<int> observed_landmark_id_list;
   std::vector<analytic_solver::_BA_Pixel> observed_pixel_list;
 };
 
-struct StereoFrame
-{
+struct StereoFrame {
   int id;
   Eigen::Transform<Numeric, 3, 1> pose;
 
-  struct
-  {
+  struct {
     std::vector<int> landmark_id_list;
     std::vector<analytic_solver::_BA_Pixel> pixel_list;
   } left;
-  struct
-  {
+  struct {
     std::vector<int> landmark_id_list;
     std::vector<analytic_solver::_BA_Pixel> pixel_list;
   } right;
 };
 
-struct Landmark
-{
+struct Landmark {
   int id;
   Eigen::Matrix<Numeric, 3, 1> world_position;
   std::vector<int> frame_id_list;
 };
 
-std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()
-{
+std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition() {
   std::vector<Eigen::Matrix<Numeric, 3, 1>> true_world_position_list;
   // Generate 3D points and projections
   const float x_nominal = 8.5f;
@@ -66,10 +56,8 @@ std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()
   const float y_step = 0.1f;
   const float z_step = 0.1f;
 
-  for (float z = z_min; z <= z_max; z += z_step)
-  {
-    for (float y = y_min; y <= y_max; y += y_step)
-    {
+  for (float z = z_min; z <= z_max; z += z_step) {
+    for (float y = y_min; y <= y_max; y += y_step) {
       Eigen::Matrix<Numeric, 3, 1> world_position;
       world_position.x() = x_nominal;
       world_position.y() = y;
@@ -80,8 +68,8 @@ std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()
   return true_world_position_list;
 }
 
-void GetStereoInstrinsicAndExtrinsic(analytic_solver::_BA_Camera &camera_left, analytic_solver::_BA_Camera &camera_right)
-{
+void GetStereoInstrinsicAndExtrinsic(analytic_solver::_BA_Camera &camera_left,
+                                     analytic_solver::_BA_Camera &camera_right) {
   Eigen::Transform<Numeric, 3, 1> pose_left_to_right;
   pose_left_to_right.linear() = Eigen::Matrix<Numeric, 3, 3>::Identity();
   pose_left_to_right.translation().setZero();
@@ -102,8 +90,7 @@ void GetStereoInstrinsicAndExtrinsic(analytic_solver::_BA_Camera &camera_left, a
   camera_right.pose_this_to_cam0 = pose_left_to_right.inverse();
 }
 
-int main()
-{
+int main() {
   simd::PointWarper pw;
 
   const int num_fixed_poses = 5;
@@ -136,7 +123,9 @@ int main()
   // Generate camera pose list
   std::vector<Eigen::Transform<Numeric, 3, 1>> T_wc_list;
   Eigen::Transform<Numeric, 3, 1> pose_base_to_camera = Eigen::Transform<Numeric, 3, 1>::Identity();
-  pose_base_to_camera.linear() = Eigen::AngleAxis<Numeric>(M_PI_2, Eigen::Matrix<Numeric, 3, 1>::UnitY()).toRotationMatrix() * Eigen::AngleAxis<Numeric>(-M_PI_2, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
+  pose_base_to_camera.linear() =
+      Eigen::AngleAxis<Numeric>(M_PI_2, Eigen::Matrix<Numeric, 3, 1>::UnitY()).toRotationMatrix() *
+      Eigen::AngleAxis<Numeric>(-M_PI_2, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
 
   // camera poses
   int frame_count = 0;
@@ -144,13 +133,15 @@ int main()
   const float y_step = 0.2f;
   const float yaw_step = 0.01f;
   Eigen::Transform<Numeric, 3, 1> pose_world_to_base = Eigen::Transform<Numeric, 3, 1>::Identity();
-  pose_world_to_base.linear() = Eigen::AngleAxis<Numeric>(-0.2, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
+  pose_world_to_base.linear() =
+      Eigen::AngleAxis<Numeric>(-0.2, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
   pose_world_to_base.translation().x() = -1.0;
   pose_world_to_base.translation().y() = -2.5;
   pose_world_to_base.translation().z() = 0.0;
-  for (int index = 0; index < 60; ++index)
-  {
-    pose_world_to_base.linear() = pose_world_to_base.linear() * Eigen::AngleAxis<Numeric>(yaw_step, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
+  for (int index = 0; index < 60; ++index) {
+    pose_world_to_base.linear() =
+        pose_world_to_base.linear() *
+        Eigen::AngleAxis<Numeric>(yaw_step, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
     pose_world_to_base.translation().x() += x_step;
     pose_world_to_base.translation().y() += y_step;
     Eigen::Transform<Numeric, 3, 1> T_wc = pose_world_to_base * pose_base_to_camera;
@@ -165,20 +156,17 @@ int main()
   }
 
   // Pose error on opt poses
-  for (int index = num_fixed_poses; index < 60; ++index)
-  {
+  for (int index = num_fixed_poses; index < 60; ++index) {
     stereoframe_pool.at(index).pose.translation().x() += position_err(gen);
     stereoframe_pool.at(index).pose.translation().y() += position_err(gen);
     stereoframe_pool.at(index).pose.translation().z() += position_err(gen);
   }
 
-  for (int frame_id = 0; frame_id < T_wc_list.size(); ++frame_id)
-  {
+  for (int frame_id = 0; frame_id < T_wc_list.size(); ++frame_id) {
     auto &stereo_frame = stereoframe_pool[frame_id];
     const auto T_cw = T_wc_list[frame_id].inverse();
 
-    for (int landmark_id = 0; landmark_id < true_X_list.size(); ++landmark_id)
-    {
+    for (int landmark_id = 0; landmark_id < true_X_list.size(); ++landmark_id) {
       const auto &Xi = true_X_list[landmark_id];
 
       Landmark landmark;
@@ -192,8 +180,7 @@ int main()
       pixel_left.y() = camera_list[0].fy * local_position(1) * inverse_z_left + camera_list[0].cy + pixel_err(gen);
 
       const bool is_seen_left = in_image(pixel_left, n_cols, n_rows);
-      if (is_seen_left)
-      {
+      if (is_seen_left) {
         stereo_frame.left.landmark_id_list.push_back(landmark_id);
         stereo_frame.left.pixel_list.push_back(pixel_left);
       }
@@ -205,8 +192,7 @@ int main()
       pixel_right.y() = camera_list[1].fy * right_position(1) * inverse_z_right + camera_list[1].cy + pixel_err(gen);
 
       const bool is_seen_right = in_image(pixel_right, n_cols, n_rows);
-      if (is_seen_right)
-      {
+      if (is_seen_right) {
         stereo_frame.right.landmark_id_list.push_back(landmark_id);
         stereo_frame.right.pixel_list.push_back(pixel_right);
       }
@@ -220,41 +206,33 @@ int main()
 
   // Solve problem
   analytic_solver::FullBundleAdjustmentSolver ba_solver;
-  for (const auto &camera : camera_list)
-    ba_solver.AddCamera(camera);
+  for (const auto &camera : camera_list) ba_solver.AddCamera(camera);
 
-  for (auto &[frame_id, stereoframe] : stereoframe_pool)
-    ba_solver.AddPose(&stereoframe.pose);
+  for (auto &[frame_id, stereoframe] : stereoframe_pool) ba_solver.AddPose(&stereoframe.pose);
 
-  for (auto &[landmark_id, landmark] : landmark_pool)
-    ba_solver.AddPoint(&landmark.world_position);
+  for (auto &[landmark_id, landmark] : landmark_pool) ba_solver.AddPoint(&landmark.world_position);
 
   std::vector<int> fixed_pose_list;
-  for (int index = 0; index < num_fixed_poses; ++index)
-    fixed_pose_list.push_back(index);
-  for (const auto &frame_id : fixed_pose_list)
-  {
+  for (int index = 0; index < num_fixed_poses; ++index) fixed_pose_list.push_back(index);
+  for (const auto &frame_id : fixed_pose_list) {
     auto &pose = stereoframe_pool[frame_id].pose;
     ba_solver.MakePoseFixed(&pose);
   }
   ba_solver.MakePointFixed({});
 
-  ba_solver.FinalizeParameters(); // This line is necessary before solving the problem.
+  ba_solver.FinalizeParameters();  // This line is necessary before solving the problem.
 
-  for (auto &[frame_id, stereoframe] : stereoframe_pool)
-  {
-    int camera_id = 0; // left camera
-    for (int index = 0; index < stereoframe.left.landmark_id_list.size(); ++index)
-    {
+  for (auto &[frame_id, stereoframe] : stereoframe_pool) {
+    int camera_id = 0;  // left camera
+    for (int index = 0; index < stereoframe.left.landmark_id_list.size(); ++index) {
       auto &landmark = landmark_pool[stereoframe.left.landmark_id_list[index]];
       const auto &left_pixel = stereoframe.left.pixel_list[index];
 
       ba_solver.AddObservation(camera_id, &stereoframe.pose, &landmark.world_position, left_pixel);
     }
 
-    camera_id = 1; // right camera
-    for (int index = 0; index < stereoframe.right.landmark_id_list.size(); ++index)
-    {
+    camera_id = 1;  // right camera
+    for (int index = 0; index < stereoframe.right.landmark_id_list.size(); ++index) {
       auto &landmark = landmark_pool[stereoframe.right.landmark_id_list[index]];
       const auto &right_pixel = stereoframe.right.pixel_list[index];
 

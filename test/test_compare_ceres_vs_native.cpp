@@ -1,37 +1,27 @@
 #include <iostream>
-#include <vector>
 #include <random>
-
-#include "eigen3/Eigen/Dense"
-#include "eigen3/Eigen/Geometry"
-
-#include "opencv4/opencv2/core.hpp"
-#include "opencv4/opencv2/imgproc.hpp"
-#include "opencv4/opencv2/highgui.hpp"
+#include <vector>
 
 #include "ceres/ceres.h"
 #include "ceres/rotation.h"
-
-#include "utility/timer.h"
-#include "utility/geometry_library.h"
-
 #include "core/pose_only_bundle_adjustment_solver.h"
 #include "core/pose_only_bundle_adjustment_solver_ceres.h"
+#include "eigen3/Eigen/Dense"
+#include "eigen3/Eigen/Geometry"
+#include "opencv4/opencv2/core.hpp"
+#include "opencv4/opencv2/highgui.hpp"
+#include "opencv4/opencv2/imgproc.hpp"
+#include "utility/geometry_library.h"
+#include "utility/timer.h"
 
 using Pose = Eigen::Isometry3f;
 using Position = Eigen::Vector3f;
 using Pixel = Eigen::Vector2f;
 
 void GeneratePoseOnlyBundleAdjustmentSimulationData(
-    const int num_points,
-    const Pose &pose_world_to_current,
-    const int n_cols, const int n_rows,
-    const float fx, const float fy, const float cx, const float cy,
-    std::vector<Position> &true_world_position_list,
-    std::vector<Pixel> &true_pixel_list,
-    std::vector<Position> &world_position_list,
-    std::vector<Pixel> &pixel_list)
-{
+    const int num_points, const Pose &pose_world_to_current, const int n_cols, const int n_rows, const float fx,
+    const float fy, const float cx, const float cy, std::vector<Position> &true_world_position_list,
+    std::vector<Pixel> &true_pixel_list, std::vector<Position> &world_position_list, std::vector<Pixel> &pixel_list) {
   // Generate 3D points and projections
   std::random_device rd;
   std::mt19937 gen(rd());
@@ -46,8 +36,7 @@ void GeneratePoseOnlyBundleAdjustmentSimulationData(
   std::uniform_real_distribution<float> dist_z(0, z_deviation);
   std::normal_distribution<float> dist_pixel(0, pixel_error);
 
-  for (int index = 0; index < num_points; ++index)
-  {
+  for (int index = 0; index < num_points; ++index) {
     Position world_position;
     world_position.x() = dist_x(gen);
     world_position.y() = dist_y(gen);
@@ -64,8 +53,7 @@ void GeneratePoseOnlyBundleAdjustmentSimulationData(
     true_pixel_list.push_back(pixel);
   }
 
-  for (int index = 0; index < num_points; ++index)
-  {
+  for (int index = 0; index < num_points; ++index) {
     const Position &world_position = true_world_position_list[index];
     const Pixel &true_pixel = true_pixel_list[index];
 
@@ -78,10 +66,8 @@ void GeneratePoseOnlyBundleAdjustmentSimulationData(
   }
 }
 
-int main()
-{
-  try
-  {
+int main() {
+  try {
     // Camera parameters
     const int n_cols = 640;
     const int n_rows = 480;
@@ -102,11 +88,9 @@ int main()
     std::vector<Pixel> true_pixel_list;
     std::vector<Position> world_position_list;
     std::vector<Pixel> pixel_list;
-    GeneratePoseOnlyBundleAdjustmentSimulationData(
-        num_points, pose_world_to_current,
-        n_cols, n_rows, fx, fy, cx, cy,
-        true_world_position_list, true_pixel_list,
-        world_position_list, pixel_list);
+    GeneratePoseOnlyBundleAdjustmentSimulationData(num_points, pose_world_to_current, n_cols, n_rows, fx, fy, cx, cy,
+                                                   true_world_position_list, true_pixel_list, world_position_list,
+                                                   pixel_list);
 
     // Make initial guess
     Pose pose_world_to_current_initial_guess;
@@ -135,11 +119,9 @@ int main()
     options_native.solver_type = analytic_solver::solver_type_enum::GAUSS_NEWTON;
 
     std::vector<bool> mask_inlier;
-    pose_optimizer->Solve_Monocular_6Dof(
-        world_position_list, pixel_list,
-        fx, fy, cx, cy,
-        pose_world_to_current_native_solver,
-        mask_inlier, options_native, &summary_native);
+    pose_optimizer->Solve_Monocular_6Dof(world_position_list, pixel_list, fx, fy, cx, cy,
+                                         pose_world_to_current_native_solver, mask_inlier, options_native,
+                                         &summary_native);
     std::cout << "[SUMMARY of NATIVE SOLVER]:\n";
     std::cout << summary_native.BriefReport() << std::endl;
 
@@ -153,8 +135,8 @@ int main()
     // {
     //   const Eigen::Vector3d world_position = world_position_list[index].cast<double>();
     //   const Eigen::Vector2d pixel_matched = pixel_list[index].cast<double>();
-    //   ceres::CostFunction *cost_function = new MonocularReprojectionErrorCostFunction6DofAnalytic(world_position, pixel_matched);
-    //   problem_ceres_analytic.AddResidualBlock(cost_function, nullptr, parameters_ceres_analytic);
+    //   ceres::CostFunction *cost_function = new MonocularReprojectionErrorCostFunction6DofAnalytic(world_position,
+    //   pixel_matched); problem_ceres_analytic.AddResidualBlock(cost_function, nullptr, parameters_ceres_analytic);
     // }
 
     // ceres::Solver::Options options_ceres_analytic;
@@ -178,12 +160,12 @@ int main()
     double param_c2w_ceres_numerical[6] = {0, 0, 0, 0, 0, 0};
     ReprojectionCostFunctor_6dof_numerical::SetCameraIntrinsicParameters(fx, fy, cx, cy);
     ceres::Problem problem_ceres_numerical;
-    for (int index = 0; index < num_points; ++index)
-    {
+    for (int index = 0; index < num_points; ++index) {
       const Eigen::Vector3d world_position = world_position_list[index].cast<double>();
       const Eigen::Vector2d pixel_matched = pixel_list[index].cast<double>();
-      ceres::CostFunction *cost_function = new ceres::AutoDiffCostFunction<ReprojectionCostFunctor_6dof_numerical, 2, 6>(
-          new ReprojectionCostFunctor_6dof_numerical(world_position, pixel_matched));
+      ceres::CostFunction *cost_function =
+          new ceres::AutoDiffCostFunction<ReprojectionCostFunctor_6dof_numerical, 2, 6>(
+              new ReprojectionCostFunctor_6dof_numerical(world_position, pixel_matched));
       problem_ceres_numerical.AddResidualBlock(cost_function, nullptr, param_c2w_ceres_numerical);
     }
     const double time_ceres_numerical_data_insertion = timer::toc(0);
@@ -218,45 +200,48 @@ int main()
     std::cout << "Compare pose:\n";
 
     pose_true << pose_world_to_current.linear(), pose_world_to_current.translation();
-    std::cout << "truth:\n"
-              << pose_true << std::endl;
+    std::cout << "truth:\n" << pose_true << std::endl;
 
-    pose_initial_guess << pose_world_to_current_initial_guess.linear(), pose_world_to_current_initial_guess.translation();
-    std::cout << "Initial guess:\n"
-              << pose_initial_guess << std::endl;
+    pose_initial_guess << pose_world_to_current_initial_guess.linear(),
+        pose_world_to_current_initial_guess.translation();
+    std::cout << "Initial guess:\n" << pose_initial_guess << std::endl;
 
-    pose_native_solver << pose_world_to_current_native_solver.linear(), pose_world_to_current_native_solver.translation();
-    std::cout << "Estimated (native solver):\n"
-              << pose_native_solver << std::endl;
+    pose_native_solver << pose_world_to_current_native_solver.linear(),
+        pose_world_to_current_native_solver.translation();
+    std::cout << "Estimated (native solver):\n" << pose_native_solver << std::endl;
 
-    // pose_ceres_analytic << pose_world_to_current_ceres_analytic.linear(), pose_world_to_current_ceres_analytic.translation();
-    // std::cout << "Estimated (ceres analytic):\n"
+    // pose_ceres_analytic << pose_world_to_current_ceres_analytic.linear(),
+    // pose_world_to_current_ceres_analytic.translation(); std::cout << "Estimated (ceres analytic):\n"
     //           << pose_ceres_analytic << std::endl;
 
-    pose_ceres_numerical << pose_world_to_current_ceres_numerical.linear(), pose_world_to_current_ceres_numerical.translation();
-    std::cout << "Estimated (ceres numerical):\n"
-              << pose_ceres_numerical << std::endl;
+    pose_ceres_numerical << pose_world_to_current_ceres_numerical.linear(),
+        pose_world_to_current_ceres_numerical.translation();
+    std::cout << "Estimated (ceres numerical):\n" << pose_ceres_numerical << std::endl;
 
-    std::cout << "Total time in sec         (native):" << summary_native.GetTotalTimeInSecond() << " [sec]" << std::endl;
-    // std::cout << "Total time in sec (ceres_analytic):" << summary_ceres_analytic.total_time_in_seconds << " [sec]" << std::endl;
-    std::cout << "Total time in sec (ceres_autodiff):" << summary_ceres_numerical.total_time_in_seconds << " [sec]" << std::endl;
+    std::cout << "Total time in sec         (native):" << summary_native.GetTotalTimeInSecond() << " [sec]"
+              << std::endl;
+    // std::cout << "Total time in sec (ceres_analytic):" << summary_ceres_analytic.total_time_in_seconds << " [sec]" <<
+    // std::endl;
+    std::cout << "Total time in sec (ceres_autodiff):" << summary_ceres_numerical.total_time_in_seconds << " [sec]"
+              << std::endl;
     std::cout << "[Details] TIME ANALYSIS of Ceres Numerical Solver: \n";
     std::cout << "          insertion: " << time_ceres_numerical_data_insertion * 0.001 << " [s]\n";
     std::cout << "              solve: " << time_ceres_numerical_problem_solve * 0.001 << " [s]\n";
-    std::cout << "              total: " << (time_ceres_numerical_data_insertion + time_ceres_numerical_problem_solve) * 0.001 << " [ms]\n";
+    std::cout << "              total: "
+              << (time_ceres_numerical_data_insertion + time_ceres_numerical_problem_solve) * 0.001 << " [ms]\n";
 
     std::cout << "\nSpeed up ratio by using natvie solver: ";
-    std::cout << (time_ceres_numerical_data_insertion + time_ceres_numerical_problem_solve) * 0.001 / summary_native.GetTotalTimeInSecond() << " times faster\n";
+    std::cout << (time_ceres_numerical_data_insertion + time_ceres_numerical_problem_solve) * 0.001 /
+                     summary_native.GetTotalTimeInSecond()
+              << " times faster\n";
 
     // Draw images
     std::vector<Pose> debug_pose_list = pose_optimizer->GetDebugPoses();
 
-    for (int iter = 0; iter < debug_pose_list.size(); ++iter)
-    {
+    for (int iter = 0; iter < debug_pose_list.size(); ++iter) {
       const Pose &pose_world_to_current_temp = debug_pose_list[iter];
       std::vector<Pixel> projected_pixel_list;
-      for (int index = 0; index < num_points; ++index)
-      {
+      for (int index = 0; index < num_points; ++index) {
         const Position local_position = pose_world_to_current_temp.inverse() * world_position_list[index];
 
         Pixel pixel;
@@ -268,8 +253,7 @@ int main()
       }
 
       cv::Mat image_blank = cv::Mat::zeros(cv::Size(n_cols, n_rows), CV_8UC3);
-      for (int index = 0; index < pixel_list.size(); ++index)
-      {
+      for (int index = 0; index < pixel_list.size(); ++index) {
         const Pixel &pixel = pixel_list[index];
         const Pixel &projected_pixel = projected_pixel_list[index];
         cv::circle(image_blank, cv::Point2f(pixel.x(), pixel.y()), 4, cv::Scalar(255, 0, 0), 1);
@@ -278,9 +262,7 @@ int main()
       cv::imshow("optimization process visualization", image_blank);
       cv::waitKey(0);
     }
-  }
-  catch (std::exception &e)
-  {
+  } catch (std::exception &e) {
     std::cout << "e.what(): " << e.what() << std::endl;
   }
 

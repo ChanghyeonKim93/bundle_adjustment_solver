@@ -1,0 +1,6 @@
+---
+# options: https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+BasedOnStyle: Google
+Language: Cpp
+IndentWidth: 2
+ColumnLimit: 120

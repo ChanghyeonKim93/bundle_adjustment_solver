@@ -2,21 +2,17 @@
 #include <random>
 #include <unordered_map>
 
+#include "core/full_bundle_adjustment_solver.h"
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
-
 #include "opencv4/opencv2/core.hpp"
-#include "opencv4/opencv2/imgproc.hpp"
 #include "opencv4/opencv2/highgui.hpp"
-
-#include "utility/timer.h"
+#include "opencv4/opencv2/imgproc.hpp"
 #include "utility/simd_library.h"
-
-#include "core/full_bundle_adjustment_solver.h"
+#include "utility/timer.h"
 
 using Numeric = float;
-std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()
-{
+std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition() {
   std::vector<Eigen::Matrix<Numeric, 3, 1>> true_world_position_list;
   // Generate 3D points and projections
   const float x_nominal = 8.5f;
@@ -28,10 +24,8 @@ std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()
   const float y_step = 0.001f;
   const float z_step = 0.001f;
 
-  for (float z = z_min; z <= z_max; z += z_step)
-  {
-    for (float y = y_min; y <= y_max; y += y_step)
-    {
+  for (float z = z_min; z <= z_max; z += z_step) {
+    for (float y = y_min; y <= y_max; y += y_step) {
       Eigen::Matrix<Numeric, 3, 1> world_position;
       world_position.x() = x_nominal;
       world_position.y() = y;
@@ -42,8 +36,7 @@ std::vector<Eigen::Matrix<Numeric, 3, 1>> GenerateWorldPosition()
   return true_world_position_list;
 }
 
-int main()
-{
+int main() {
   simd::PointWarper pw;
 
   const int num_fixed_poses = 5;
@@ -56,8 +49,7 @@ int main()
   stopwatch.Start();
   std::vector<Eigen::Vector3f> warped_X_list;
   warped_X_list.resize(X_list.size());
-  for (int idx = 0; idx < X_list.size(); ++idx)
-    warped_X_list[idx] = pose * pose * X_list[idx];
+  for (int idx = 0; idx < X_list.size(); ++idx) warped_X_list[idx] = pose * pose * X_list[idx];
   const double time1 = stopwatch.GetLapTimeFromLatest();
   std::cout << time1 << std::endl;
 
