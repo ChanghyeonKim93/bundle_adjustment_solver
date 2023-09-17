@@ -102,7 +102,7 @@ int main() {
 
   const float pixel_error = 0.0f;
   const float point_error_level = 0.0f;
-  const float pose_translation_error_level = 0.1f;
+  const float pose_translation_error_level = 0.0f;
   const int image_width = 640;
   const int image_height = 480;
 

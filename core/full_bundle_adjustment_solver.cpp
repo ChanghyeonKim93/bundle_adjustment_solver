@@ -508,18 +508,18 @@ inline void FullBundleAdjustmentSolver::CalcQijtQij(const _BA_Mat26 &Qij, _BA_Ma
 
   // Calculate upper triangle
   const _BA_Mat26 &a = Qij;
-  Qij_t_Qij(0, 0) = (a(0, 0) * a(0, 0));
-  Qij_t_Qij(0, 1) = (a(0, 0) * a(0, 1));
-  Qij_t_Qij(0, 2) = (a(0, 0) * a(0, 2));
-  Qij_t_Qij(0, 3) = (a(0, 0) * a(0, 3));
-  Qij_t_Qij(0, 4) = (a(0, 0) * a(0, 4));
-  Qij_t_Qij(0, 5) = (a(0, 0) * a(0, 5));
+  Qij_t_Qij(0, 0) = (a(0, 0) * a(0, 0) + a(1, 0) * a(1, 0));
+  Qij_t_Qij(0, 1) = (a(0, 0) * a(0, 1) + a(1, 0) * a(1, 1));
+  Qij_t_Qij(0, 2) = (a(0, 0) * a(0, 2) + a(1, 0) * a(1, 2));
+  Qij_t_Qij(0, 3) = (a(0, 0) * a(0, 3) + a(1, 0) * a(1, 3));
+  Qij_t_Qij(0, 4) = (a(0, 0) * a(0, 4) + a(1, 0) * a(1, 4));
+  Qij_t_Qij(0, 5) = (a(0, 0) * a(0, 5) + a(1, 0) * a(1, 5));
 
-  Qij_t_Qij(1, 1) = (a(1, 1) * a(1, 1));
-  Qij_t_Qij(1, 2) = (a(1, 1) * a(1, 2));
-  Qij_t_Qij(1, 3) = (a(1, 1) * a(1, 3));
-  Qij_t_Qij(1, 4) = (a(1, 1) * a(1, 4));
-  Qij_t_Qij(1, 5) = (a(1, 1) * a(1, 5));
+  Qij_t_Qij(1, 1) = (a(0, 1) * a(0, 1) + a(1, 1) * a(1, 1));
+  Qij_t_Qij(1, 2) = (a(0, 1) * a(0, 2) + a(1, 1) * a(1, 2));
+  Qij_t_Qij(1, 3) = (a(0, 1) * a(0, 3) + a(1, 1) * a(1, 3));
+  Qij_t_Qij(1, 4) = (a(0, 1) * a(0, 4) + a(1, 1) * a(1, 4));
+  Qij_t_Qij(1, 5) = (a(0, 1) * a(0, 5) + a(1, 1) * a(1, 5));
 
   Qij_t_Qij(2, 2) = (a(0, 2) * a(0, 2) + a(1, 2) * a(1, 2));
   Qij_t_Qij(2, 3) = (a(0, 2) * a(0, 3) + a(1, 2) * a(1, 3));
@@ -595,18 +595,18 @@ inline void FullBundleAdjustmentSolver::CalcQijtQijweight(const _BA_Numeric weig
   const _BA_Mat26 &a = Qij;
   const _BA_Mat26 wa = weight * Qij;
 
-  Qij_t_Qij(0, 0) = (wa(0, 0) * a(0, 0));
-  // Qij_t_Qij(0,1) = (0);
-  Qij_t_Qij(0, 2) = (wa(0, 0) * a(0, 2));
-  Qij_t_Qij(0, 3) = (wa(0, 0) * a(0, 3));
-  Qij_t_Qij(0, 4) = (wa(0, 0) * a(0, 4));
-  Qij_t_Qij(0, 5) = (wa(0, 0) * a(0, 5));
+  Qij_t_Qij(0, 0) = (wa(0, 0) * a(0, 0) + wa(1, 0) * a(1, 0));
+  Qij_t_Qij(0, 1) = (wa(0, 0) * a(0, 1) + wa(1, 0) * a(1, 1));
+  Qij_t_Qij(0, 2) = (wa(0, 0) * a(0, 2) + wa(1, 0) * a(1, 2));
+  Qij_t_Qij(0, 3) = (wa(0, 0) * a(0, 3) + wa(1, 0) * a(1, 3));
+  Qij_t_Qij(0, 4) = (wa(0, 0) * a(0, 4) + wa(1, 0) * a(1, 4));
+  Qij_t_Qij(0, 5) = (wa(0, 0) * a(0, 5) + wa(1, 0) * a(1, 5));
 
-  Qij_t_Qij(1, 1) = (wa(1, 1) * a(1, 1));
-  Qij_t_Qij(1, 2) = (wa(1, 1) * a(1, 2));
-  Qij_t_Qij(1, 3) = (wa(1, 1) * a(1, 3));
-  Qij_t_Qij(1, 4) = (wa(1, 1) * a(1, 4));
-  Qij_t_Qij(1, 5) = (wa(1, 1) * a(1, 5));
+  Qij_t_Qij(1, 1) = (wa(0, 1) * a(0, 1) + wa(1, 1) * a(1, 1));
+  Qij_t_Qij(1, 2) = (wa(0, 1) * a(0, 2) + wa(1, 1) * a(1, 2));
+  Qij_t_Qij(1, 3) = (wa(0, 1) * a(0, 3) + wa(1, 1) * a(1, 3));
+  Qij_t_Qij(1, 4) = (wa(0, 1) * a(0, 4) + wa(1, 1) * a(1, 4));
+  Qij_t_Qij(1, 5) = (wa(0, 1) * a(0, 5) + wa(1, 1) * a(1, 5));
 
   Qij_t_Qij(2, 2) = (wa(0, 2) * a(0, 2) + wa(1, 2) * a(1, 2));
   Qij_t_Qij(2, 3) = (wa(0, 2) * a(0, 3) + wa(1, 2) * a(1, 3));
@@ -808,7 +808,7 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
 
   bool is_converged = true;
   // double error_previous = 1e25;
-  double error_previous = EvaluateCurrentError() * inverse_scaler_;
+  double previous_cost = EvaluateCurrentError() * inverse_scaler_;
   _BA_Numeric lambda = initial_lambda;
   for (int iteration = 0; iteration < MAX_ITERATION; ++iteration) {
     // Reset A, B, Bt, C, Cinv, a, b, x, y...
@@ -816,6 +816,7 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
 
     // Iteratively solve. (Levenberg-Marquardt algorithm)
     // Calculate hessian and gradient by observations
+    int num_observations = 0;
     for (const auto &observation : observation_list_) {
       const auto &camera_index = observation.camera_index;
       const auto &pixel = observation.pixel;
@@ -920,6 +921,7 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
           Bt_[i_opt][j_opt] = B_[j_opt][i_opt].transpose();
         }
       }
+      ++num_observations;
     }  // END for observations
 
     // 1) Damping 'A_' diagonal
@@ -1010,9 +1012,10 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
 
     // 2) Evaluate the updated cost (reserved unupdated parameters)
     UpdateParameters(x_, y_);
-    const auto error_current = EvaluateCurrentError() * inverse_scaler_;
+
+    const auto current_cost = EvaluateCurrentError() * inverse_scaler_;
     const auto changed_error_by_model = EvaluateErrorChangeByQuadraticModel();
-    const auto rho = (error_current - error_previous) / changed_error_by_model;
+    const auto rho = (current_cost - previous_cost) / changed_error_by_model;
 
     struct {
       const double threshold_update = 0.25;
@@ -1035,51 +1038,54 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
       lambda = std::min(100.0, static_cast<double>(lambda * increase_ratio_lambda));
 
     // Error calculation
-    double average_error = sqrt(error_current / static_cast<double>(num_observation_));
-    const auto delta_error = abs(error_current - error_previous);
+    double average_error = current_cost / static_cast<double>(num_observations);
+    const auto cost_change = abs(current_cost - previous_cost);
 
     // Calculate delta_parameter
     _BA_Numeric step_size_pose_norm = 0.0;
     _BA_Numeric step_size_point_norm = 0.0;
     for (const auto &xj : x_) step_size_pose_norm += xj.norm();
     for (const auto &yi : y_) step_size_point_norm += yi.norm();
+    double total_step_size = step_size_point_norm + step_size_pose_norm;
 
-    const auto average_delta_error = delta_error / static_cast<double>(num_observation_);
-    const auto average_total_step_size =
-        (step_size_pose_norm + step_size_point_norm) / static_cast<double>(N_optimize_ + M_optimize_);
-    if (average_total_step_size < THRES_DELTA_XI || delta_error < THRES_DELTA_ERROR) {
+    std::cout << "num_observations:" << num_observations << std::endl;
+    const auto average_delta_error = cost_change / static_cast<double>(num_observations);
+    const auto average_total_step_size = (total_step_size) / static_cast<double>(N_optimize_ + M_optimize_);
+    if (average_total_step_size < THRES_DELTA_XI || cost_change < THRES_DELTA_ERROR) {
       // Early convergence.
       is_converged = true;
-      break;
     }
+
     if (iteration >= max_iteration - 1) {
       is_converged = false;
     }
 
-    const double iter_time = stopwatch.GetLapTimeFromLatest();
+    const double time_per_iteration = stopwatch.GetLapTimeFromLatest();
+
     if (summary != nullptr) {
       OptimizationInfo optimization_info;
-      optimization_info.cost = error_current;
-      optimization_info.cost_change = delta_error;
+      optimization_info.cost = current_cost;
+      optimization_info.cost_change = cost_change;
       optimization_info.average_reprojection_error = average_error;
 
       optimization_info.abs_step = average_total_step_size;
       optimization_info.abs_gradient = 0;
       optimization_info.damping_term = lambda;
-      optimization_info.iter_time = iter_time;
+      optimization_info.iter_time = time_per_iteration;
       optimization_info.iteration_status = iter_status;
 
       if (optimization_info.iteration_status == iteration_status_enum::SKIPPED) {
-        optimization_info.cost = error_previous;
+        optimization_info.cost = previous_cost;
         optimization_info.cost_change = 0;
-        optimization_info.average_reprojection_error = sqrt(error_previous / static_cast<double>(num_observation_));
+        optimization_info.average_reprojection_error = sqrt(previous_cost / static_cast<double>(num_observation_));
       }
 
       summary->optimization_info_list_.push_back(optimization_info);
     }
 
-    error_previous = error_current;
+    previous_cost = current_cost;
 
+    if (is_converged) break;
   }  // END iteration
 
   // Finally, update parameters to the original poses / points
