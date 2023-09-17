@@ -40,7 +40,7 @@ FullBundleAdjustmentSolver::FullBundleAdjustmentSolver() {
 }
 
 void FullBundleAdjustmentSolver::Reset() {
-  camera_list_.resize(0);
+  camera_list_.clear();
   N_ = 0;
   M_ = 0;
   N_optimize_ = 0;
@@ -68,7 +68,7 @@ void FullBundleAdjustmentSolver::Reset() {
   // TODO(@)
 }
 
-void FullBundleAdjustmentSolver::AddCamera(const _BA_Camera &camera) {
+void FullBundleAdjustmentSolver::AddCamera(const _BA_Index camera_index, const _BA_Camera &camera) {
   auto camera_scaled = camera;
   camera_scaled.pose_cam0_to_this.translation() *= scaler_;
   camera_scaled.pose_this_to_cam0.translation() *= scaler_;
@@ -76,7 +76,7 @@ void FullBundleAdjustmentSolver::AddCamera(const _BA_Camera &camera) {
   camera_scaled.fy *= scaler_;
   camera_scaled.cx *= scaler_;
   camera_scaled.cy *= scaler_;
-  camera_list_.push_back(camera_scaled);
+  camera_list_.insert({camera_index, camera_scaled});
   std::cout << "New camera is added.\n";
   std::cout << "  fx: " << camera_scaled.fx << ", fy: " << camera_scaled.fy << ", cx: " << camera_scaled.cx
             << ", cy: " << camera_scaled.cy << "\n";
@@ -147,10 +147,10 @@ void FullBundleAdjustmentSolver::MakePointFixed(_BA_Point *original_pointptr_to_
   ++M_fixed_;
 }
 
-void FullBundleAdjustmentSolver::AddObservation(const _BA_Index index_camera, _BA_Pose *related_pose,
+void FullBundleAdjustmentSolver::AddObservation(const _BA_Index camera_index, _BA_Pose *related_pose,
                                                 _BA_Point *related_point, const _BA_Pixel &pixel) {
   _BA_Observation observation;
-  if (index_camera >= camera_list_.size() || index_camera < 0) {
+  if (camera_list_.count(camera_index) == 0) {
     std::cerr << TEXT_RED("Invalid camera index.\n");
     return;
   }
@@ -163,7 +163,7 @@ void FullBundleAdjustmentSolver::AddObservation(const _BA_Index index_camera, _B
     return;
   }
 
-  observation.camera_index = index_camera;
+  observation.camera_index = camera_index;
   observation.related_pose = related_pose;
   observation.related_point = related_point;
   observation.pixel = pixel * scaler_;
@@ -273,32 +273,29 @@ void FullBundleAdjustmentSolver::SetProblemSize() {
 }
 
 void FullBundleAdjustmentSolver::CheckPoseAndPointConnectivity() {
+  static constexpr int kMinNumObservedPoints = 5;
+  static constexpr int kMinNumRelatedPoses = 2;
+
   for (size_t j_opt = 0; j_opt < j_opt_to_all_point_.size(); ++j_opt) {
     const auto &observed_points = j_opt_to_all_point_[j_opt];
     const size_t num_observed_point = observed_points.size();
-    // std::cout << j_opt << "-th pose is connected total " << num_observed_point << " points.";
 
     const auto &observed_opt_points = j_opt_to_i_opt_[j_opt];
     const size_t num_observed_optimizable_point = observed_opt_points.size();
 
-    // std::cout << " (optimizable points: " << num_observed_optimizable_point
-    //           << " )\n";
-    if (num_observed_point < 4)
+    if (num_observed_point < kMinNumObservedPoints)
       std::cerr << TEXT_YELLOW(std::to_string(j_opt) +
                                "-th pose: It might diverge because some frames have insufficient related points.")
                 << std::endl;
   }
   for (size_t i_opt = 0; i_opt < i_opt_to_all_pose_.size(); ++i_opt) {
     const auto &related_poses = i_opt_to_all_pose_[i_opt];
-    const size_t num_related_pose = related_poses.size();
-    // std::cout << i_opt << "-th point is connected total " << num_related_pose << " poses.";
+    const int num_related_pose = static_cast<int>(related_poses.size());
 
     const auto &related_opt_poses = i_opt_to_j_opt_[i_opt];
-    const size_t num_observed_optimizable_pose = related_opt_poses.size();
+    const int num_observed_optimizable_pose = static_cast<int>(related_opt_poses.size());
 
-    // std::cout << " (optimizable poses: " << num_observed_optimizable_pose
-    //           << " )\n";
-    if (num_related_pose < 4)
+    if (num_related_pose <= kMinNumRelatedPoses)
       std::cerr << TEXT_YELLOW(std::to_string(i_opt) +
                                "-th point: It might diverge because some points have insufficient related poses.")
                 << std::endl;
@@ -768,6 +765,9 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
 
   // Start to solve
   stopwatch.Start();
+
+  FinalizeParameters();
+  GetSolverStatistics();
 
   bool is_success = true;
 

@@ -131,7 +131,7 @@ class FullBundleAdjustmentSolver {
 
   void Reset();
 
-  void AddCamera(const _BA_Camera &camera);
+  void AddCamera(const _BA_Index camera_index, const _BA_Camera &camera);
   void AddPose(_BA_Pose *original_pose);
   void AddPoint(_BA_Point *original_point);
 
@@ -140,8 +140,6 @@ class FullBundleAdjustmentSolver {
 
   void MakePoseFixed(_BA_Pose *original_pose_to_be_fixed);
   void MakePointFixed(_BA_Point *original_point_to_be_fixed);
-
-  void FinalizeParameters();
 
   bool Solve(Options options, Summary *summary = nullptr);
 
@@ -152,6 +150,7 @@ class FullBundleAdjustmentSolver {
   _BA_Numeric inverse_scaler_;
 
  private:
+  void FinalizeParameters();
   void SetProblemSize();
 
  private:  // Solve related
@@ -199,7 +198,7 @@ class FullBundleAdjustmentSolver {
 
  private:            // Camera list
   int num_cameras_;  // # of rigidly fixed cameras (number 0 is the major camera)
-  std::vector<_BA_Camera> camera_list_;
+  std::unordered_map<_BA_Index, _BA_Camera> camera_list_;
 
   std::unordered_map<_BA_Pose *, _BA_Pose> original_pose_to_T_jw_map_;    // map
   std::unordered_set<_BA_Pose *> fixed_original_pose_set_;                // set
