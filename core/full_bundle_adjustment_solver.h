@@ -166,17 +166,17 @@ class FullBundleAdjustmentSolver {
   void UpdateParameters(const std::vector<_BA_Vec6> &x_list, const std::vector<_BA_Vec3> &y_list);
 
  private:  // For fast calculations for symmetric matrices
-  inline void CalcRijtRij(const _BA_Mat23 &Rij, _BA_Mat33 &Rij_t_Rij);
-  inline void CalcRijtRijweight(const _BA_Numeric weight, const _BA_Mat23 &Rij, _BA_Mat33 &Rij_t_Rij);
+  inline void CalcRijtRijOnlyUpperTriangle(const _BA_Mat23 &Rij, _BA_Mat33 &Rij_t_Rij);
+  inline void CalcRijtRijweightOnlyUpperTriangle(const _BA_Numeric weight, const _BA_Mat23 &Rij, _BA_Mat33 &Rij_t_Rij);
 
-  inline void CalcQijtQij(const _BA_Mat26 &Qij, _BA_Mat66 &Qij_t_Qij);
-  inline void CalcQijtQijweight(const _BA_Numeric weight, const _BA_Mat26 &Qij, _BA_Mat66 &Qij_t_Qij);
+  inline void CalcQijtQijOnlyUpperTriangle(const _BA_Mat26 &Qij, _BA_Mat66 &Qij_t_Qij);
+  inline void CalcQijtQijweightOnlyUpperTriangle(const _BA_Numeric weight, const _BA_Mat26 &Qij, _BA_Mat66 &Qij_t_Qij);
 
   inline void AddUpperTriangle(_BA_Mat33 &C, _BA_Mat33 &Rij_t_Rij_upper);
   inline void AddUpperTriangle(_BA_Mat66 &A, _BA_Mat66 &Qij_t_Qij_upper);
 
-  inline void FillLowerTriangle(_BA_Mat33 &C);
-  inline void FillLowerTriangle(_BA_Mat66 &A);
+  inline void FillLowerTriangleByUpperTriangle(_BA_Mat33 &C);
+  inline void FillLowerTriangleByUpperTriangle(_BA_Mat66 &A);
 
  private:
   template <typename T>
@@ -184,21 +184,21 @@ class FullBundleAdjustmentSolver {
   template <typename T>
   void so3Exp(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R);
 
- private:                       // Problem sizes
-  _BA_Size_t N_;                // # of all inserted poses
-  _BA_Size_t M_;                // # of all insertedmappoints
-  _BA_Size_t N_optimize_;       // # of optimization poses
-  _BA_Size_t M_optimize_;       // # of optimization mappoints
-  _BA_Size_t N_fixed_;          // # of fixed poses
-  _BA_Size_t M_fixed_;          // # of fixed points
-  _BA_Size_t num_observation_;  // # of total observations
+ private:                              // Problem sizes
+  _BA_Size_t num_total_poses_;         // # of all inserted poses
+  _BA_Size_t num_total_points_;        // # of all insertedmappoints
+  _BA_Size_t num_opt_poses_;           // # of optimization poses
+  _BA_Size_t num_opt_points_;          // # of optimization mappoints
+  _BA_Size_t num_fixed_poses_;         // # of fixed poses
+  _BA_Size_t num_fixed_points_;        // # of fixed points
+  _BA_Size_t num_total_observations_;  // # of total observations
 
  private:
   bool is_parameter_finalized_{false};
 
  private:            // Camera list
   int num_cameras_;  // # of rigidly fixed cameras (number 0 is the major camera)
-  std::unordered_map<_BA_Index, _BA_Camera> camera_list_;
+  std::unordered_map<_BA_Index, _BA_Camera> camera_index_to_camera_map_;
 
   std::unordered_map<_BA_Pose *, _BA_Pose> original_pose_to_T_jw_map_;    // map
   std::unordered_set<_BA_Pose *> fixed_original_pose_set_;                // set
