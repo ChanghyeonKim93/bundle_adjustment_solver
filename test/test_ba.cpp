@@ -13,7 +13,7 @@
 #include "utility/simd_library.h"
 #include "utility/timer.h"
 
-using Numeric = float;
+using Numeric = double;
 using Pose = Eigen::Transform<Numeric, 3, 1>;
 using Point = Eigen::Matrix<Numeric, 3, 1>;
 
@@ -53,13 +53,13 @@ std::vector<Point> GenerateWorldPosition() {
 
   // Generate 3D points and projections
   const float x_nominal = 8.5f;
-  const float z_min = 0.7f;
-  const float z_max = 1.7f;
+  const float z_min = 1.7f;
+  const float z_max = 5.7f;
   const float y_min = 0.0f;
   const float y_max = 26.0f;
 
-  const float y_step = 0.1f;
-  const float z_step = 0.1f;
+  const float y_step = 0.4f;
+  const float z_step = 0.4f;
 
   for (float z = z_min; z <= z_max; z += z_step) {
     for (float y = y_min; y <= y_max; y += y_step) {
@@ -97,14 +97,12 @@ void GetStereoInstrinsicAndExtrinsic(analytic_solver::_BA_Camera &camera_left,
 }
 
 int main() {
-  simd::PointWarper point_warpper;
-
   const int num_total_poses = 60;
   const int num_fixed_poses = 5;
 
   const float pixel_error = 0.0f;
-  const float point_error_level = 0.5f;
-  const float pose_translation_error_level = 0.2f;
+  const float point_error_level = 0.0f;
+  const float pose_translation_error_level = 0.1f;
   const int image_width = 640;
   const int image_height = 480;
 
@@ -139,11 +137,11 @@ int main() {
   int frame_count = 0;
   const float x_step = 0.005f;
   const float y_step = 0.2f;
-  const float yaw_step = 0.01f;
+  const float yaw_step = 0.005f;
   Pose world_to_base_pose = Pose::Identity();
   world_to_base_pose.linear() =
-      Eigen::AngleAxis<Numeric>(-0.2, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
-  world_to_base_pose.translation().x() = -1.0;
+      Eigen::AngleAxis<Numeric>(-0.1, Eigen::Matrix<Numeric, 3, 1>::UnitZ()).toRotationMatrix();
+  world_to_base_pose.translation().x() = -4.0;
   world_to_base_pose.translation().y() = -2.5;
   world_to_base_pose.translation().z() = 0.0;
 
@@ -263,8 +261,8 @@ int main() {
 
   analytic_solver::Options options;
   options.iteration_handle.max_num_iterations = 3000;
-  options.convergence_handle.threshold_cost_change = 1e-6f;
-  options.convergence_handle.threshold_step_size = 1e-6f;
+  options.convergence_handle.threshold_cost_change = 1e-7f;
+  options.convergence_handle.threshold_step_size = 1e-7f;
   // options.trust_region_handle.initial_lambda = 100.0;
   analytic_solver::Summary summary;
   ba_solver.Solve(options, &summary);

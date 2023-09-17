@@ -29,7 +29,7 @@
 #include "eigen3/Eigen/Dense"
 
 namespace analytic_solver {
-using _BA_Numeric = float;
+using _BA_Numeric = double;
 
 using _BA_MatDynamic = Eigen::Matrix<_BA_Numeric, -1, -1>;
 using _BA_Mat11 = _BA_Numeric;
