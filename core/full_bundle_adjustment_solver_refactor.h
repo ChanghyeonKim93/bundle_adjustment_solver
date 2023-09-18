@@ -1,5 +1,5 @@
-#ifndef _FULL_BUNDLE_ADJUSTMENT_SOLVER_H_
-#define _FULL_BUNDLE_ADJUSTMENT_SOLVER_H_
+#ifndef _FULL_BUNDLE_ADJUSTMENT_SOLVER_REFACTOR_H_
+#define _FULL_BUNDLE_ADJUSTMENT_SOLVER_REFACTOR_H_
 
 #include <iomanip>
 #include <ios>
@@ -29,6 +29,7 @@
 #include "eigen3/Eigen/Dense"
 
 namespace analytic_solver {
+
 using _BA_Numeric = double;
 
 using _BA_MatDynamic = Eigen::Matrix<_BA_Numeric, -1, -1>;
@@ -94,6 +95,7 @@ struct _BA_Camera {
     fy = camera.fy;
     cx = camera.cx;
     cy = camera.cy;
+    pose_cam0_to_this = camera.pose_cam0_to_this;
     pose_this_to_cam0 = camera.pose_this_to_cam0;
   }
 
@@ -101,6 +103,7 @@ struct _BA_Camera {
   _BA_Numeric fy{0.0};
   _BA_Numeric cx{0.0};
   _BA_Numeric cy{0.0};
+  _BA_Pose pose_cam0_to_this;
   _BA_Pose pose_this_to_cam0;
 };
 

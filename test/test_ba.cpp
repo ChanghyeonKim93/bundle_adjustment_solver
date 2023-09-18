@@ -85,14 +85,12 @@ void GetStereoInstrinsicAndExtrinsic(analytic_solver::_BA_Camera &camera_left,
   camera_left.fy = 525.0f;
   camera_left.cx = 320.0f;
   camera_left.cy = 240.0f;
-  camera_left.pose_cam0_to_this = Pose::Identity();
   camera_left.pose_this_to_cam0 = Pose::Identity();
 
   camera_right.fx = 525.0f;
   camera_right.fy = 525.0f;
   camera_right.cx = 320.0f;
   camera_right.cy = 240.0f;
-  camera_right.pose_cam0_to_this = left_to_right_pose;
   camera_right.pose_this_to_cam0 = left_to_right_pose.inverse();
 }
 

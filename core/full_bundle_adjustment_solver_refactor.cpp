@@ -70,6 +70,7 @@ void FullBundleAdjustmentSolver::Reset() {
 
 void FullBundleAdjustmentSolver::AddCamera(const _BA_Index camera_index, const _BA_Camera &camera) {
   auto camera_scaled = camera;
+  camera_scaled.pose_cam0_to_this.translation() *= scaler_;
   camera_scaled.pose_this_to_cam0.translation() *= scaler_;
   camera_scaled.fx *= scaler_;
   camera_scaled.fy *= scaler_;
@@ -79,6 +80,9 @@ void FullBundleAdjustmentSolver::AddCamera(const _BA_Index camera_index, const _
   std::cout << "New camera is added.\n";
   std::cout << "  fx: " << camera_scaled.fx << ", fy: " << camera_scaled.fy << ", cx: " << camera_scaled.cx
             << ", cy: " << camera_scaled.cy << "\n";
+  std::cout << "  scaled pose from cam0:\n"
+            << camera_scaled.pose_cam0_to_this.linear() << "\n"
+            << camera_scaled.pose_cam0_to_this.translation().transpose() << "\n";
 }
 
 void FullBundleAdjustmentSolver::AddPose(_BA_Pose *original_pose) {
