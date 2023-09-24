@@ -369,7 +369,7 @@ void FullBundleAdjustmentSolver::ZeroizeStorageMatrices() {
   // std::cout << "zeroize done\n";
 }
 
-double FullBundleAdjustmentSolver::EvaluateCurrentError() {
+double FullBundleAdjustmentSolver::EvaluateCurrentCost() {
   // Evaluate residual only
   Index cnt = 0;
   double error_current = 0.0;
@@ -423,26 +423,26 @@ double FullBundleAdjustmentSolver::EvaluateCurrentError() {
   return error_current;
 }
 
-double FullBundleAdjustmentSolver::EvaluateErrorChangeByQuadraticModel() {
-  SolverNumeric estimated_error_change = 0.0;
+double FullBundleAdjustmentSolver::EvaluateCostChangeByQuadraticModel() {
+  SolverNumeric estimated_cost_change = 0.0;
   for (Index j_opt = 0; j_opt < num_opt_poses_; ++j_opt) {
-    estimated_error_change +=
+    estimated_cost_change +=
         a_[j_opt].transpose() * x_[j_opt];  // 2*gradient.transpose()*delta_x
-    estimated_error_change += x_[j_opt].transpose() * A_[j_opt] * x_[j_opt];
+    estimated_cost_change += x_[j_opt].transpose() * A_[j_opt] * x_[j_opt];
   }
   for (Index i_opt = 0; i_opt < num_opt_points_; ++i_opt) {
-    estimated_error_change +=
+    estimated_cost_change +=
         b_[i_opt].transpose() * y_[i_opt];  // 2*gradient.transpose()*delta_x
-    estimated_error_change += y_[i_opt].transpose() * C_[i_opt] * y_[i_opt];
+    estimated_cost_change += y_[i_opt].transpose() * C_[i_opt] * y_[i_opt];
 
     const auto &j_opt_list = i_opt_to_j_opt_[i_opt];
     Matrix3x1 Bji_xj = Matrix3x1::Zero();
     for (const auto &j_opt : j_opt_list)
       Bji_xj += Bt_[i_opt][j_opt] * x_[j_opt];
 
-    estimated_error_change += 2.0 * y_[i_opt].transpose() * Bji_xj;
+    estimated_cost_change += 2.0 * y_[i_opt].transpose() * Bji_xj;
   }
-  return -estimated_error_change;
+  return -estimated_cost_change;
 }
 
 void FullBundleAdjustmentSolver::ReserveCurrentParameters() {
@@ -488,6 +488,14 @@ void FullBundleAdjustmentSolver::UpdateParameters(
     auto &Xi = original_point_to_Xi_map_[original_point];
     Xi.noalias() += y_list[i_opt];
   }
+}
+
+inline bool FullBundleAdjustmentSolver::IsFixedPose(Pose *original_pose) {
+  return (fixed_original_pose_set_.count(original_pose) > 0);
+}
+
+inline bool FullBundleAdjustmentSolver::IsFixedPoint(Point *original_point) {
+  return (fixed_original_point_set_.count(original_point) > 0);
 }
 
 // For fast calculations for symmetric matrices
@@ -706,6 +714,9 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
   FinalizeParameters();
   GetSolverStatistics();
 
+  if (!is_parameter_finalized_)
+    throw std::runtime_error("Solver is not finalized.");
+
   bool is_success = true;
 
   // Make connectivity map
@@ -747,7 +758,7 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
 
   bool is_converged = true;
   // double error_previous = 1e25;
-  double previous_cost = EvaluateCurrentError() * inverse_scaler_;
+  double previous_cost = EvaluateCurrentCost() * inverse_scaler_;
   SolverNumeric lambda = initial_lambda;
   for (int iteration = 0; iteration < MAX_ITERATION; ++iteration) {
     // Reset A, B, Bt, C, Cinv, a, b, x, y...
@@ -970,9 +981,9 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
     // 2) Evaluate the updated cost (reserved unupdated parameters)
     UpdateParameters(x_, y_);
 
-    const auto current_cost = EvaluateCurrentError() * inverse_scaler_;
-    const auto changed_error_by_model = EvaluateErrorChangeByQuadraticModel();
-    const auto rho = (current_cost - previous_cost) / changed_error_by_model;
+    const auto current_cost = EvaluateCurrentCost() * inverse_scaler_;
+    const auto estimated_cost_change = EvaluateCostChangeByQuadraticModel();
+    const auto rho = (current_cost - previous_cost) / estimated_cost_change;
 
     struct {
       const double threshold_update = 0.25;
@@ -981,7 +992,6 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
 
     iteration_status_enum iter_status;
     if (rho > trust_region.threshold_update) {
-      // good! update the parameters
       iter_status = iteration_status_enum::UPDATE;
     } else {
       RevertToReservedParameters();

@@ -136,23 +136,25 @@ class FullBundleAdjustmentSolver {
   SolverNumeric scaler_;
   SolverNumeric inverse_scaler_;
 
- private:
+ private:  // Solve related
   void FinalizeParameters();
   void SetProblemSize();
 
- private:  // Solve related
   void CheckPoseAndPointConnectivity();
 
   void ZeroizeStorageMatrices();
-  double EvaluateCurrentError();
+  double EvaluateCurrentCost();
 
-  double EvaluateErrorChangeByQuadraticModel();
+  double EvaluateCostChangeByQuadraticModel();
 
   void ReserveCurrentParameters();  // reserved_notupdated_opt_poses_,
                                     // reserved_notupdated_opt_points_;
   void RevertToReservedParameters();
   void UpdateParameters(const std::vector<Vector6> &pose_update_list,
                         const std::vector<Vector3> &point_update_list);
+
+  inline bool IsFixedPose(Pose *original_pose);
+  inline bool IsFixedPoint(Point *original_point);
 
  private:  // For fast calculations for symmetric matrices
   // Rij: jacobian_matrix_by_world_point (2x3)
