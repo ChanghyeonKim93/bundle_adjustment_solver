@@ -24,17 +24,17 @@ struct Camera {
 
 namespace analytic_solver {
 
-using _BA_Numeric = double;
-using _BA_Pose = Eigen::Transform<_BA_Numeric, 3, 1>;
-using _BA_Point = Eigen::Matrix<_BA_Numeric, 3, 1>;
-using _BA_Pixel = Eigen::Matrix<_BA_Numeric, 2, 1>;
+using SolverNumeric = double;
+using Pose = Eigen::Transform<SolverNumeric, 3, 1>;
+using Point = Eigen::Matrix<SolverNumeric, 3, 1>;
+using Pixel = Eigen::Matrix<SolverNumeric, 2, 1>;
 
 struct OptimizerCameraForCeres {
-  _BA_Numeric fx{0.0};
-  _BA_Numeric fy{0.0};
-  _BA_Numeric cx{0.0};
-  _BA_Numeric cy{0.0};
-  _BA_Pose pose_this_to_cam0;
+  SolverNumeric fx{0.0};
+  SolverNumeric fy{0.0};
+  SolverNumeric cx{0.0};
+  SolverNumeric cy{0.0};
+  Pose pose_this_to_cam0;
 
   OptimizerCameraForCeres(){};
   OptimizerCameraForCeres(const float fx, const float fy, const float cx,
@@ -48,11 +48,11 @@ struct OptimizerCameraForCeres {
   }
 };
 
-struct _BA_Observation {
-  int camera_index{-1};
-  _BA_Pose *related_pose{nullptr};
-  _BA_Point *related_point{nullptr};
-  _BA_Pixel pixel{-1.0, -1.0};
+struct BundleAdjustmentObservation {
+  int related_camera_id{-1};
+  Pose *related_pose{nullptr};
+  Point *related_point{nullptr};
+  Pixel pixel{-1.0, -1.0};
 };
 
 class FullBundleAdjustmentSolverCeres {
@@ -63,22 +63,22 @@ class FullBundleAdjustmentSolverCeres {
   void Reset();
 
   void AddCamera(const int camera_index, const Camera &camera);
-  void AddPose(_BA_Pose *original_pose);
-  void AddPoint(_BA_Point *original_point);
+  void AddPose(Pose *original_pose);
+  void AddPoint(Point *original_point);
 
-  void AddObservation(const int camera_index, _BA_Pose *related_pose,
-                      _BA_Point *related_point, const _BA_Pixel &pixel);
+  void AddObservation(const int camera_index, Pose *related_pose,
+                      Point *related_point, const Pixel &pixel);
 
-  void MakePoseFixed(_BA_Pose *original_pose_to_be_fixed);
-  void MakePointFixed(_BA_Point *original_point_to_be_fixed);
+  void MakePoseFixed(Pose *original_pose_to_be_fixed);
+  void MakePointFixed(Point *original_point_to_be_fixed);
 
   bool Solve(Options options, Summary *summary = nullptr);
 
   std::string GetSolverStatistics() const;
 
  private:
-  _BA_Numeric scaler_;
-  _BA_Numeric inverse_scaler_;
+  SolverNumeric scaler_;
+  SolverNumeric inverse_scaler_;
 
  private:
   void FinalizeParameters();
@@ -101,13 +101,13 @@ class FullBundleAdjustmentSolverCeres {
  private:  // For fast calculations for symmetric matrices
   inline void CalcRijtRijOnlyUpperTriangle(const _BA_Mat23 &Rij,
                                            _BA_Mat33 &Rij_t_Rij);
-  inline void CalcRijtRijweightOnlyUpperTriangle(const _BA_Numeric weight,
+  inline void CalcRijtRijweightOnlyUpperTriangle(const SolverNumeric weight,
                                                  const _BA_Mat23 &Rij,
                                                  _BA_Mat33 &Rij_t_Rij);
 
   inline void CalcQijtQijOnlyUpperTriangle(const _BA_Mat26 &Qij,
                                            _BA_Mat66 &Qij_t_Qij);
-  inline void CalcQijtQijweightOnlyUpperTriangle(const _BA_Numeric weight,
+  inline void CalcQijtQijweightOnlyUpperTriangle(const SolverNumeric weight,
                                                  const _BA_Mat26 &Qij,
                                                  _BA_Mat66 &Qij_t_Qij);
 
@@ -141,27 +141,26 @@ class FullBundleAdjustmentSolverCeres {
                      // camera)
   std::unordered_map<_BA_Index, _BA_Camera> camera_index_to_camera_map_;
 
-  std::unordered_map<_BA_Pose *, _BA_Pose> original_pose_to_T_jw_map_;    // map
-  std::unordered_set<_BA_Pose *> fixed_original_pose_set_;                // set
-  std::unordered_map<_BA_Pose *, _BA_Index> original_pose_to_j_opt_map_;  // map
-  std::vector<_BA_Pose *> j_opt_to_original_pose_map_;  // vector
-  std::vector<_BA_Pose> reserved_opt_poses_;
+  std::unordered_map<Pose *, Pose> original_pose_to_T_jw_map_;        // map
+  std::unordered_set<Pose *> fixed_original_pose_set_;                // set
+  std::unordered_map<Pose *, _BA_Index> original_pose_to_j_opt_map_;  // map
+  std::vector<Pose *> j_opt_to_original_pose_map_;                    // vector
+  std::vector<Pose> reserved_opt_poses_;
 
-  std::unordered_map<_BA_Point *, _BA_Point> original_point_to_Xi_map_;  // map
-  std::unordered_set<_BA_Point *> fixed_original_point_set_;             // set
-  std::unordered_map<_BA_Point *, _BA_Index>
-      original_point_to_i_opt_map_;                       // map
-  std::vector<_BA_Point *> i_opt_to_original_point_map_;  // vector
-  std::vector<_BA_Point> reserved_opt_points_;
+  std::unordered_map<Point *, Point> original_point_to_Xi_map_;         // map
+  std::unordered_set<Point *> fixed_original_point_set_;                // set
+  std::unordered_map<Point *, _BA_Index> original_point_to_i_opt_map_;  // map
+  std::vector<Point *> i_opt_to_original_point_map_;  // vector
+  std::vector<Point> reserved_opt_points_;
 
-  std::vector<_BA_Observation> observation_list_;
+  std::vector<BundleAdjustmentObservation> observation_list_;
 
  private:  // related to connectivity
   std::vector<std::unordered_set<_BA_Index>> i_opt_to_j_opt_;
   std::vector<std::unordered_set<_BA_Index>> j_opt_to_i_opt_;
 
-  std::vector<std::unordered_set<_BA_Pose *>> i_opt_to_all_pose_;
-  std::vector<std::unordered_set<_BA_Point *>> j_opt_to_all_point_;
+  std::vector<std::unordered_set<Pose *>> i_opt_to_all_pose_;
+  std::vector<std::unordered_set<Point *>> j_opt_to_all_point_;
 
  private:               // Storages to solve Schur Complement
   DiagBlockMat66 A_;    // N_opt (6x6) block diagonal part for poses
@@ -176,10 +175,9 @@ class FullBundleAdjustmentSolverCeres {
   BlockVec6 x_;  // N_opt (6x1)
   BlockVec3 y_;  // M_opt (3x1)
 
-  std::vector<_BA_Pose>
+  std::vector<Pose>
       params_poses_;  // N_opt (Eigen::Isometry3) parameter vector for poses
-  std::vector<_BA_Point>
-      params_points_;  // M_opt (3x1) parameter vector for points
+  std::vector<Point> params_points_;  // M_opt (3x1) parameter vector for points
 
   DiagBlockMat33 Cinv_;     // M_opt (3x3) block diagonal part for landmarks' 3D
                             // points (inverse)

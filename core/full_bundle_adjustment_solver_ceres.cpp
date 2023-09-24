@@ -13,20 +13,20 @@ void FullBundleAdjustmentSolverCeres::AddCamera(const int camera_index,
   (void)camera;
 }
 
-void FullBundleAdjustmentSolverCeres::AddPose(_BA_Pose *original_pose) {}
+void FullBundleAdjustmentSolverCeres::AddPose(Pose *original_pose) {}
 
-void FullBundleAdjustmentSolverCeres::AddPoint(_BA_Point *original_point) {}
+void FullBundleAdjustmentSolverCeres::AddPoint(Point *original_point) {}
 
 void FullBundleAdjustmentSolverCeres::AddObservation(const int camera_index,
-                                                     _BA_Pose *related_pose,
-                                                     _BA_Point *related_point,
-                                                     const _BA_Pixel &pixel) {}
+                                                     Pose *related_pose,
+                                                     Point *related_point,
+                                                     const Pixel &pixel) {}
 
 void FullBundleAdjustmentSolverCeres::MakePoseFixed(
-    _BA_Pose *original_pose_to_be_fixed) {}
+    Pose *original_pose_to_be_fixed) {}
 
 void FullBundleAdjustmentSolverCeres::MakePointFixed(
-    _BA_Point *original_point_to_be_fixed) {}
+    Point *original_point_to_be_fixed) {}
 
 bool FullBundleAdjustmentSolverCeres::Solve(Options options,
                                             Summary *summary = nullptr) {}
