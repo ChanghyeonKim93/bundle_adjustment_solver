@@ -24,6 +24,7 @@ set(SRC
   core/pose_only_bundle_adjustment_solver_ceres.cpp
   core/pose_only_bundle_adjustment_solver.cpp
   core/full_bundle_adjustment_solver.cpp
+  core/full_bundle_adjustment_solver_refactor.cpp
 )
 
 # TEST

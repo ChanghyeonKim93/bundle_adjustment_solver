@@ -1,5 +1,5 @@
 #include "full_bundle_adjustment_solver_ceres.h"
-
+namespace visual_navigation {
 namespace analytic_solver {
 
 FullBundleAdjustmentSolverCeres::FullBundleAdjustmentSolverCeres() {}
@@ -34,3 +34,4 @@ bool FullBundleAdjustmentSolverCeres::Solve(Options options,
 std::string FullBundleAdjustmentSolverCeres::GetSolverStatistics() const {}
 
 }  // namespace analytic_solver
+}  // namespace visual_navigation

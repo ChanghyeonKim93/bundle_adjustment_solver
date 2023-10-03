@@ -22,6 +22,7 @@ struct Camera {
   Eigen::Isometry3f camera_to_camera_link_pose{Eigen::Isometry3f::Identity()};
 };
 
+namespace visual_navigation {
 namespace analytic_solver {
 
 using SolverNumeric = double;
@@ -48,7 +49,7 @@ struct OptimizerCameraForCeres {
   }
 };
 
-struct BundleAdjustmentObservation {
+struct PointObservation {
   int related_camera_id{-1};
   Pose *related_pose{nullptr};
   Point *related_point{nullptr};
@@ -153,7 +154,7 @@ class FullBundleAdjustmentSolverCeres {
   std::vector<Point *> i_opt_to_original_point_map_;  // vector
   std::vector<Point> reserved_opt_points_;
 
-  std::vector<BundleAdjustmentObservation> observation_list_;
+  std::vector<PointObservation> observation_list_;
 
  private:  // related to connectivity
   std::vector<std::unordered_set<_BA_Index>> i_opt_to_j_opt_;
@@ -199,6 +200,7 @@ class FullBundleAdjustmentSolverCeres {
   _BA_MatDynamic x_mat_;  // 6*N_opt x 1
 };
 
-};  // namespace analytic_solver
+}  // namespace analytic_solver
+}  // namespace visual_navigation
 
 #endif

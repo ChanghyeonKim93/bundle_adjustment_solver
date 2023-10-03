@@ -28,30 +28,10 @@
 #include "core/solver_option_and_summary.h"
 #include "eigen3/Eigen/Dense"
 
+namespace visual_navigation {
 namespace analytic_solver {
 
 using SolverNumeric = double;
-
-using MatrixDynamic = Eigen::Matrix<SolverNumeric, -1, -1>;
-
-using Matrix2x3 = Eigen::Matrix<SolverNumeric, 2, 3>;
-using Matrix3x2 = Eigen::Matrix<SolverNumeric, 3, 2>;
-
-using Matrix2x6 = Eigen::Matrix<SolverNumeric, 2, 6>;
-using Matrix6x2 = Eigen::Matrix<SolverNumeric, 6, 2>;
-
-using Matrix3x1 = Eigen::Matrix<SolverNumeric, 3, 1>;
-using Matrix1x3 = Eigen::Matrix<SolverNumeric, 1, 3>;
-using Matrix3x3 = Eigen::Matrix<SolverNumeric, 3, 3>;
-
-using Matrix3x6 = Eigen::Matrix<SolverNumeric, 3, 6>;
-using Matrix6x3 = Eigen::Matrix<SolverNumeric, 6, 3>;
-
-using Matrix6x6 = Eigen::Matrix<SolverNumeric, 6, 6>;
-
-using Vector2 = Eigen::Matrix<SolverNumeric, 2, 1>;
-using Vector3 = Eigen::Matrix<SolverNumeric, 3, 1>;
-using Vector6 = Eigen::Matrix<SolverNumeric, 6, 1>;
 
 using Index = int;
 using Pixel = Eigen::Matrix<SolverNumeric, 2, 1>;
@@ -64,17 +44,6 @@ using ErrorList = std::vector<SolverNumeric>;
 using IndexList = std::vector<Index>;
 using PixelList = std::vector<Pixel>;
 using PointList = std::vector<Point>;
-
-using DiagBlockMat33 = std::vector<Matrix3x3>;
-using DiagBlockMat66 = std::vector<Matrix6x6>;
-
-using FullBlockMat3x3 = std::vector<std::vector<Matrix3x3>>;
-using FullBlockMat6x3 = std::vector<std::vector<Matrix6x3>>;
-using FullBlockMat3x6 = std::vector<std::vector<Matrix3x6>>;
-using FullBlockMat6x6 = std::vector<std::vector<Matrix6x6>>;
-
-using BlockVec3 = std::vector<Vector3>;
-using BlockVec6 = std::vector<Vector6>;
 
 struct OptimizerCamera {
   OptimizerCamera() {}
@@ -93,7 +62,7 @@ struct OptimizerCamera {
   Pose camera_to_body_pose;
 };
 
-struct BundleAdjustmentObservation {
+struct PointObservation {
   int related_camera_id{-1};
   Pose *related_pose{nullptr};
   Point *related_point{nullptr};
@@ -111,30 +80,59 @@ struct BundleAdjustmentObservation {
               - 3)
   최적화 하고나서 주소 접근해서 업데이트 해줘야하는데?
 */
-class FullBundleAdjustmentSolver {
+class FullBundleAdjustmentSolverRefactor {
+ private:
+  using MatrixDynamic = Eigen::Matrix<SolverNumeric, -1, -1>;
+
+  using Mat2x3 = Eigen::Matrix<SolverNumeric, 2, 3>;
+  using Mat3x2 = Eigen::Matrix<SolverNumeric, 3, 2>;
+
+  using Mat2x6 = Eigen::Matrix<SolverNumeric, 2, 6>;
+  using Mat6x2 = Eigen::Matrix<SolverNumeric, 6, 2>;
+
+  using Mat3x1 = Eigen::Matrix<SolverNumeric, 3, 1>;
+  using Mat1x3 = Eigen::Matrix<SolverNumeric, 1, 3>;
+  using Mat3x3 = Eigen::Matrix<SolverNumeric, 3, 3>;
+
+  using Mat3x6 = Eigen::Matrix<SolverNumeric, 3, 6>;
+  using Mat6x3 = Eigen::Matrix<SolverNumeric, 6, 3>;
+
+  using Mat6x6 = Eigen::Matrix<SolverNumeric, 6, 6>;
+
+  using Vec2 = Eigen::Matrix<SolverNumeric, 2, 1>;
+  using Vec3 = Eigen::Matrix<SolverNumeric, 3, 1>;
+  using Vec6 = Eigen::Matrix<SolverNumeric, 6, 1>;
+
+  using DiagBlockMat3x3 = std::vector<Mat3x3>;
+  using DiagBlockMat6x6 = std::vector<Mat6x6>;
+
+  using FullBlockMat3x3 = std::vector<std::vector<Mat3x3>>;
+  using FullBlockMat6x3 = std::vector<std::vector<Mat6x3>>;
+  using FullBlockMat3x6 = std::vector<std::vector<Mat3x6>>;
+  using FullBlockMat6x6 = std::vector<std::vector<Mat6x6>>;
+
+  using BlockVec3 = std::vector<Vec3>;
+  using BlockVec6 = std::vector<Vec6>;
+
  public:
-  FullBundleAdjustmentSolver();  // just reserve the memory
-  ~FullBundleAdjustmentSolver();
+  FullBundleAdjustmentSolverRefactor();  // just reserve the memory
+  ~FullBundleAdjustmentSolverRefactor();
 
   void Reset();
 
-  void AddCamera(const Index camera_id, const OptimizerCamera &camera);
-  void AddPose(Pose *original_pose);
-  void AddPoint(Point *original_point);
+  void RegisterCamera(const Index camera_id, const OptimizerCamera &camera);
+  void RegisterWorldToBodyPose(Pose *original_pose);
+  void RegisterWorldPoint(Point *original_point);
 
   void AddObservation(const Index camera_id, Pose *related_pose,
                       Point *related_point, const Pixel &pixel);
 
-  void MakePoseFixed(Pose *original_pose_to_be_fixed);
-  void MakePointFixed(Point *original_point_to_be_fixed);
+  void MakePoseFixed(Pose *original_pose);
+  void MakePointFixed(Point *original_point);
 
   bool Solve(Options options, Summary *summary = nullptr);
 
   std::string GetSolverStatistics() const;
-
- private:
-  SolverNumeric scaler_;
-  SolverNumeric inverse_scaler_;
 
  private:  // Solve related
   void FinalizeParameters();
@@ -142,7 +140,7 @@ class FullBundleAdjustmentSolver {
 
   void CheckPoseAndPointConnectivity();
 
-  void ZeroizeStorageMatrices();
+  void ResetStorageMatrices();
   double EvaluateCurrentCost();
 
   double EvaluateCostChangeByQuadraticModel();
@@ -150,8 +148,8 @@ class FullBundleAdjustmentSolver {
   void ReserveCurrentParameters();  // reserved_notupdated_opt_poses_,
                                     // reserved_notupdated_opt_points_;
   void RevertToReservedParameters();
-  void UpdateParameters(const std::vector<Vector6> &pose_update_list,
-                        const std::vector<Vector3> &point_update_list);
+  void UpdateParameters(const std::vector<Vec6> &pose_update_list,
+                        const std::vector<Vec3> &point_update_list);
 
   inline bool IsFixedPose(Pose *original_pose);
   inline bool IsFixedPoint(Point *original_point);
@@ -161,23 +159,23 @@ class FullBundleAdjustmentSolver {
   // Qij: jacobian_matrix_by_pose (2x6)
   // Rij_t_Rij: hessian_matrix_by_world_point (3x3)
   // Qij_t_Qij: hessian_matrix_by_pose (6x6)
-  inline void CalculatePointHessianOnlyUpperTriangle(const Matrix2x3 &Rij,
-                                                     Matrix3x3 &Rij_t_Rij);
+  inline void CalculatePointHessianOnlyUpperTriangle(const Mat2x3 &Rij,
+                                                     Mat3x3 &Rij_t_Rij);
   inline void CalculatePointHessianOnlyUpperTriangleWithWeight(
-      const SolverNumeric weight, const Matrix2x3 &Rij, Matrix3x3 &Rij_t_Rij);
+      const SolverNumeric weight, const Mat2x3 &Rij, Mat3x3 &Rij_t_Rij);
 
-  inline void CalculatePoseHessianOnlyUpperTriangle(const Matrix2x6 &Qij,
-                                                    Matrix6x6 &Qij_t_Qij);
+  inline void CalculatePoseHessianOnlyUpperTriangle(const Mat2x6 &Qij,
+                                                    Mat6x6 &Qij_t_Qij);
   inline void CalculatePoseHessianOnlyUpperTriangleWithWeight(
-      const SolverNumeric weight, const Matrix2x6 &Qij, Matrix6x6 &Qij_t_Qij);
+      const SolverNumeric weight, const Mat2x6 &Qij, Mat6x6 &Qij_t_Qij);
 
-  inline void AccumulatePointHessianOnlyUpperTriangle(
-      Matrix3x3 &C, Matrix3x3 &Rij_t_Rij_upper);
-  inline void AccumulatePoseHessianOnlyUpperTriangle(
-      Matrix6x6 &A, Matrix6x6 &Qij_t_Qij_upper);
+  inline void AccumulatePointHessianOnlyUpperTriangle(Mat3x3 &C,
+                                                      Mat3x3 &Rij_t_Rij_upper);
+  inline void AccumulatePoseHessianOnlyUpperTriangle(Mat6x6 &A,
+                                                     Mat6x6 &Qij_t_Qij_upper);
 
-  inline void FillLowerTriangleByUpperTriangle(Matrix3x3 &C);
-  inline void FillLowerTriangleByUpperTriangle(Matrix6x6 &A);
+  inline void FillLowerTriangleByUpperTriangle(Mat3x3 &C);
+  inline void FillLowerTriangleByUpperTriangle(Mat6x6 &A);
 
  private:
   template <typename T>
@@ -186,21 +184,23 @@ class FullBundleAdjustmentSolver {
   template <typename T>
   void so3Exp(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R);
 
- private:                       // Problem sizes
-  int num_total_poses_;         // # of all inserted poses
-  int num_total_points_;        // # of all insertedmappoints
-  int num_opt_poses_;           // # of optimization poses
-  int num_opt_points_;          // # of optimization mappoints
-  int num_fixed_poses_;         // # of fixed poses
-  int num_fixed_points_;        // # of fixed points
-  int num_total_observations_;  // # of total observations
+ private:                        // Problem sizes
+  int num_total_poses_;          // # of all inserted poses
+  int num_total_points_;         // # of all insertedmappoints
+  int num_optimization_poses_;   // # of optimization poses
+  int num_optimization_points_;  // # of optimization mappoints
+  int num_fixed_poses_;          // # of fixed poses
+  int num_fixed_points_;         // # of fixed points
+  int num_total_observations_;   // # of total observations
 
  private:
   bool is_parameter_finalized_{false};
 
- private:            // Camera list
-  int num_cameras_;  // # of rigidly fixed cameras (number 0 is the major
-                     // camera)
+ private:
+  static constexpr SolverNumeric kScaler = 0.05;
+  static constexpr SolverNumeric kInverseScaler = 20.0;
+
+ private:  // Camera list
   std::unordered_map<Index, OptimizerCamera> camera_id_to_camera_map_;
 
   std::unordered_map<Pose *, Pose> original_pose_to_T_jw_map_;    // map
@@ -215,7 +215,7 @@ class FullBundleAdjustmentSolver {
   std::vector<Point *> i_opt_to_original_point_map_;                // vector
   std::vector<Point> reserved_opt_points_;
 
-  std::vector<BundleAdjustmentObservation> observation_list_;
+  std::vector<PointObservation> observation_list_;
 
  private:  // related to connectivity
   std::vector<std::unordered_set<Index>> i_opt_to_j_opt_;
@@ -225,10 +225,10 @@ class FullBundleAdjustmentSolver {
   std::vector<std::unordered_set<Point *>> j_opt_to_all_point_;
 
  private:               // Storages to solve Schur Complement
-  DiagBlockMat66 A_;    // N_opt (6x6) block diagonal part for poses
+  DiagBlockMat6x6 A_;   // N_opt (6x6) block diagonal part for poses
   FullBlockMat6x3 B_;   // N_opt x M_opt (6x3) block part (side)
   FullBlockMat3x6 Bt_;  // M_opt x N_opt (3x6) block part (side, transposed)
-  DiagBlockMat33 C_;    // M_opt (3x3) block diagonal part for  3D points
+  DiagBlockMat3x3 C_;   // M_opt (3x3) block diagonal part for  3D points
 
   BlockVec6 a_;  // num_poses x 1 (6x1)
   BlockVec3 b_;  // num_points x 1 (3x1)
@@ -236,7 +236,7 @@ class FullBundleAdjustmentSolver {
   BlockVec6 x_;  // num_poses (6x1)
   BlockVec3 y_;  // num_points (3x1)
 
-  DiagBlockMat33 Cinv_;     // M_opt (3x3) block diagonal part for landmarks' 3D
+  DiagBlockMat3x3 Cinv_;    // M_opt (3x3) block diagonal part for landmarks' 3D
                             // points (inverse)
   FullBlockMat6x3 BCinv_;   // N_opt X M_opt  (6x3)
   FullBlockMat3x6 CinvBt_;  // M_opt x N_opt (3x6)
@@ -256,6 +256,7 @@ class FullBundleAdjustmentSolver {
   MatrixDynamic x_mat_;  // 6*N_opt x 1
 };
 
-};  // namespace analytic_solver
+}  // namespace analytic_solver
+}  // namespace visual_navigation
 
 #endif

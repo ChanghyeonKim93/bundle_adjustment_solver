@@ -1,14 +1,11 @@
-#ifndef _SOLVER_OPTION_AND_SUMMARY_H_
-#define _SOLVER_OPTION_AND_SUMMARY_H_
+#ifndef _SOLVER_OPTION_AND_SUMMARY_REFACTOR_H_
+#define _SOLVER_OPTION_AND_SUMMARY_REFACTOR_H_
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include "ceres/ceres.h"
-
-namespace visual_navigation {
 namespace analytic_solver {
 #define TEXT_RED(str) (std::string("\033[0;31m") + str + std::string("\033[0m"))
 #define TEXT_GREEN(str) \
@@ -34,20 +31,8 @@ enum class IterationStatus {
   UPDATE_TRUST_MORE = 1,
   SKIPPED = 2
 };
-struct OptimizationInfo {
-  double cost{-1.0};
-  double cost_change{-1.0};
-  double average_reprojection_error{-1.0};
-  double abs_gradient{-1.0};
-  double abs_step{-1.0};
-  double damping_term{-1.0};
-  double iter_time{-1.0};
-  IterationStatus iteration_status{IterationStatus::UNDEFINED};
-};
-class Options {
-  friend class PoseOnlyBundleAdjustmentSolver;
-  friend class FullBundleAdjustmentSolver;
 
+class Options {
  public:
   Options() {}
   ~Options() {}
@@ -71,28 +56,48 @@ class Options {
   } trust_region_handle;
 };
 
-class Summary {
-  friend class PoseOnlyBundleAdjustmentSolver;
-  friend class FullBundleAdjustmentSolver;
-  friend class FullBundleAdjustmentSolverRefactor;
+struct OverallSummary {
+  double initial_cost{0.0};
+  double final_cost{0.0};
+  bool is_converged{true};
+  int num_residuals{-1};
+  int num_residual_blocks{-1};
+  int num_parameters{-1};
+  int num_parameter_blocks{-1};
+};
 
+struct IterationSummary {
+  int iteration{-1};
+  double iteration_time_in_seconds{0.0};
+  double cumulative_time_in_seconds{0.0};
+  double cost{0.0};
+  double cost_change{0.0};
+  double gradient_norm{0.0};
+  double step_norm{0.0};
+  double step_size{0.0};
+  double step_solver_time_in_seconds{0.0};
+  double trust_region_radius{0.0};
+  IterationStatus iteration_status{IterationStatus::UNDEFINED};
+};
+
+class Summary {
  public:
   Summary();
   ~Summary();
-  std::string BriefReport();
-  std::string FullReport();
-  const double GetTotalTimeInSecond() const;
+  std::string BriefReport() const;
+  double GetTotalTimeInSeconds() const;
 
- protected:
-  std::vector<OptimizationInfo> optimization_info_list_;
-  int max_iteration_;
-  double total_time_in_millisecond_;
-  double threshold_step_size_;
-  double threshold_cost_change_;
-  bool convergence_status_;
+ public:
+  void SetIterationSummary(const IterationSummary& iteration_summary);
+  void SetOverallSummary(const OverallSummary& overall_summary);
+
+ private:
+  bool is_overall_summary_set_;
+  bool is_iteration_summary_set_;
+  OverallSummary overall_summary_;
+  std::vector<IterationSummary> iteration_summary_list_;
 };
 
 }  // namespace analytic_solver
-}  // namespace visual_navigation
 
-#endif
+#endif  // _SOLVER_OPTION_AND_SUMMARY_REFACTOR_H_

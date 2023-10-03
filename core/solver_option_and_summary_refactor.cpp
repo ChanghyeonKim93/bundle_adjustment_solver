@@ -1,16 +1,19 @@
-#include "solver_option_and_summary.h"
+#include "solver_option_and_summary_refactor.h"
 
-namespace visual_navigation {
+#include <iomanip>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+
 namespace analytic_solver {
 
-Summary::Summary() {}
-Summary::~Summary() {}
-const double Summary::GetTotalTimeInSecond() const {
-  return total_time_in_millisecond_ * 0.001;
-}
+Summary::Summary()
+    : is_overall_summary_set_(false), is_iteration_summary_set_(false) {}
 
-std::string Summary::BriefReport() {
-  const auto default_precision{std::cout.precision()};
+Summary::~Summary() {}
+
+std::string Summary::BriefReport() const {
+  const std::streamsize default_precision{std::cout.precision()};
   std::stringstream ss;
   ss << "itr ";            // 5
   ss << "  total_cost  ";  // 14
@@ -21,26 +24,27 @@ std::string Summary::BriefReport() {
   ss << " damp_term ";     // 12
   ss << " itr_time[ms] ";  // 11
   ss << "itr_stat\n";
-
-  const size_t num_iterations = optimization_info_list_.size();
+  const size_t num_iterations = iteration_summary_list_.size();
   for (size_t iteration = 0; iteration < num_iterations; ++iteration) {
-    const OptimizationInfo &optimization_info =
-        optimization_info_list_[iteration];
+    const IterationSummary& iteration_summary =
+        iteration_summary_list_[iteration];
+
     ss << std::setw(3) << iteration << " ";
-    ss << " " << std::scientific << optimization_info.cost;
+    ss << " " << std::scientific << iteration_summary.cost;
     ss << "    " << std::setprecision(2) << std::scientific
-       << optimization_info.average_reprojection_error;
+       << iteration_summary.cost / static_cast<double>(1.0);
     ss << "    " << std::setprecision(2) << std::scientific
-       << optimization_info.cost_change;
+       << iteration_summary.cost_change;
     ss << "   " << std::setprecision(2) << std::scientific
-       << optimization_info.abs_step;
+       << iteration_summary.step_norm;
     ss << "   " << std::setprecision(2) << std::scientific
-       << optimization_info.abs_gradient;
-    ss << "    " << std::setprecision(2) << std::scientific
-       << optimization_info.damping_term;
+       << iteration_summary.gradient_norm;
     ss << "   " << std::setprecision(2) << std::scientific
-       << optimization_info.iter_time;
-    switch (optimization_info.iteration_status) {
+       << iteration_summary.trust_region_radius;
+    ss << "   " << std::setprecision(2) << std::scientific
+       << iteration_summary.iteration_time_in_seconds;
+
+    switch (iteration_summary.iteration_status) {
       case IterationStatus::UPDATE:
         ss << "     "
            << "UPDATE";
@@ -57,6 +61,7 @@ std::string Summary::BriefReport() {
     ss << "\n";
     ss << std::setprecision(default_precision);  // restore defaults
   }
+
   ss << std::setprecision(5);
   ss << "Analytic Solver Report:\n";
   ss << "  Iterations      : " << num_iterations << "\n";
@@ -83,5 +88,22 @@ std::string Summary::BriefReport() {
   return ss.str();
 }
 
+double Summary::GetTotalTimeInSeconds() const {
+  if (is_iteration_summary_set_)
+    throw std::runtime_error("iteration_summary is not set.");
+  const double total_time_in_seconds =
+      iteration_summary_list_.back().cumulative_time_in_seconds;
+  return total_time_in_seconds;
+}
+
+void Summary::SetIterationSummary(const IterationSummary& iteration_summary) {
+  iteration_summary_list_.push_back(iteration_summary);
+  is_iteration_summary_set_ = true;
+}
+
+void Summary::SetOverallSummary(const OverallSummary& overall_summary) {
+  overall_summary_ = overall_summary;
+  is_overall_summary_set_ = true;
+}
+
 }  // namespace analytic_solver
-}  // namespace visual_navigation
