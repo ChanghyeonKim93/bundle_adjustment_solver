@@ -124,9 +124,6 @@ class FullBundleAdjustmentSolverRefactor {
   void RegisterWorldToBodyPose(Pose *original_pose);
   void RegisterWorldPoint(Point *original_point);
 
-  void AddObservation(const Index camera_id, Pose *related_pose,
-                      Point *related_point, const Pixel &pixel);
-
   void MakePoseFixed(Pose *original_pose);
   void MakePointFixed(Point *original_point);
 
@@ -134,23 +131,24 @@ class FullBundleAdjustmentSolverRefactor {
 
   std::string GetSolverStatistics() const;
 
+ public:
+  void AddObservation(const Index camera_id, Pose *related_pose,
+                      Point *related_point, const Pixel &pixel);
+
  private:  // Solve related
   void FinalizeParameters();
   void SetProblemSize();
-
   void CheckPoseAndPointConnectivity();
 
   void ResetStorageMatrices();
   double EvaluateCurrentCost();
-
   double EvaluateCostChangeByQuadraticModel();
-
-  void ReserveCurrentParameters();  // reserved_notupdated_opt_poses_,
-                                    // reserved_notupdated_opt_points_;
+  void ReserveCurrentParameters();
   void RevertToReservedParameters();
   void UpdateParameters(const std::vector<Vec6> &pose_update_list,
                         const std::vector<Vec3> &point_update_list);
 
+ private:
   inline bool IsFixedPose(Pose *original_pose);
   inline bool IsFixedPoint(Point *original_point);
 
@@ -184,14 +182,14 @@ class FullBundleAdjustmentSolverRefactor {
   template <typename T>
   void so3Exp(const Eigen::Matrix<T, 3, 1> &w, Eigen::Matrix<T, 3, 3> &R);
 
- private:                        // Problem sizes
-  int num_total_poses_;          // # of all inserted poses
-  int num_total_points_;         // # of all insertedmappoints
-  int num_optimization_poses_;   // # of optimization poses
-  int num_optimization_points_;  // # of optimization mappoints
-  int num_fixed_poses_;          // # of fixed poses
-  int num_fixed_points_;         // # of fixed points
-  int num_total_observations_;   // # of total observations
+ private:  // Problem sizes
+  int num_total_poses_;
+  int num_total_points_;
+  int num_optimization_poses_;
+  int num_optimization_points_;
+  int num_fixed_poses_;
+  int num_fixed_points_;
+  int num_total_observations_;
 
  private:
   bool is_parameter_finalized_{false};
@@ -203,19 +201,21 @@ class FullBundleAdjustmentSolverRefactor {
  private:  // Camera list
   std::unordered_map<Index, OptimizerCamera> camera_id_to_camera_map_;
 
-  std::unordered_map<Pose *, Pose> original_pose_to_T_jw_map_;    // map
-  std::unordered_set<Pose *> fixed_original_pose_set_;            // set
-  std::unordered_map<Pose *, Index> original_pose_to_j_opt_map_;  // map
-  std::vector<Pose *> j_opt_to_original_pose_map_;                // vector
-  std::vector<Pose> reserved_opt_poses_;
+  std::unordered_map<Pose *, Pose>
+      original_pose_to_inverse_optimized_pose_map_;                    // map
+  std::unordered_set<Pose *> fixed_original_pose_set_;                 // set
+  std::unordered_map<Pose *, Index> original_pose_to_pose_index_map_;  // map
+  std::vector<Pose *> pose_index_to_original_pose_map_;                // vector
+  std::vector<Pose> reserved_optimized_poses_;
 
-  std::unordered_map<Point *, Point> original_point_to_Xi_map_;     // map
-  std::unordered_set<Point *> fixed_original_point_set_;            // set
-  std::unordered_map<Point *, Index> original_point_to_i_opt_map_;  // map
-  std::vector<Point *> i_opt_to_original_point_map_;                // vector
-  std::vector<Point> reserved_opt_points_;
+  std::unordered_map<Point *, Point>
+      original_point_to_optimized_point_map_;                             // map
+  std::unordered_set<Point *> fixed_original_point_set_;                  // set
+  std::unordered_map<Point *, Index> original_point_to_point_index_map_;  // map
+  std::vector<Point *> point_index_to_original_point_map_;  // vector
+  std::vector<Point> reserved_optimized_points_;
 
-  std::vector<PointObservation> observation_list_;
+  std::vector<PointObservation> point_observation_list_;
 
  private:  // related to connectivity
   std::vector<std::unordered_set<Index>> i_opt_to_j_opt_;
@@ -236,10 +236,9 @@ class FullBundleAdjustmentSolverRefactor {
   BlockVec6 x_;  // num_poses (6x1)
   BlockVec3 y_;  // num_points (3x1)
 
-  DiagBlockMat3x3 Cinv_;    // M_opt (3x3) block diagonal part for landmarks' 3D
-                            // points (inverse)
-  FullBlockMat6x3 BCinv_;   // N_opt X M_opt  (6x3)
-  FullBlockMat3x6 CinvBt_;  // M_opt x N_opt (3x6)
+  DiagBlockMat3x3 Cinv_;   // M_opt (3x3) blk diag. part for 3D points (inverse)
+  FullBlockMat6x3 BCinv_;  // N_opt X M_opt  (6x3)
+  FullBlockMat3x6 CinvBt_;   // M_opt x N_opt (3x6)
   FullBlockMat6x6 BCinvBt_;  // N_opt x N_opt (6x6)
   BlockVec6 BCinv_b_;        // N_opt (6x1)
   BlockVec3 Bt_x_;           // M_opt (3x1)

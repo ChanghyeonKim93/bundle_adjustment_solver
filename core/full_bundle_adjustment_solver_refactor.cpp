@@ -12,19 +12,19 @@ FullBundleAdjustmentSolverRefactor::FullBundleAdjustmentSolverRefactor()
       num_fixed_points_(0),
       num_total_observations_(0),
       is_parameter_finalized_(false) {
-  original_pose_to_T_jw_map_.reserve(500);
+  original_pose_to_inverse_optimized_pose_map_.reserve(500);
   fixed_original_pose_set_.reserve(500);
-  original_pose_to_j_opt_map_.reserve(500);
-  j_opt_to_original_pose_map_.reserve(500);
-  reserved_opt_poses_.reserve(500);
+  original_pose_to_pose_index_map_.reserve(500);
+  pose_index_to_original_pose_map_.reserve(500);
+  reserved_optimized_poses_.reserve(500);
 
-  original_point_to_Xi_map_.reserve(100000);
+  original_point_to_optimized_point_map_.reserve(100000);
   fixed_original_point_set_.reserve(100000);
-  original_point_to_i_opt_map_.reserve(100000);
-  i_opt_to_original_point_map_.reserve(100000);
-  reserved_opt_points_.reserve(100000);
+  original_point_to_point_index_map_.reserve(100000);
+  point_index_to_original_point_map_.reserve(100000);
+  reserved_optimized_points_.reserve(100000);
 
-  observation_list_.reserve(2000000);
+  point_observation_list_.reserve(2000000);
 
   A_.reserve(500);  // reserve expected # of optimizable poses (N_opt)
   B_.reserve(500);  //
@@ -33,6 +33,8 @@ FullBundleAdjustmentSolverRefactor::FullBundleAdjustmentSolverRefactor()
 
   std::cerr << "SparseBundleAdjustmentSolver() - initialize.\n";
 }
+
+FullBundleAdjustmentSolverRefactor::~FullBundleAdjustmentSolverRefactor() {}
 
 void FullBundleAdjustmentSolverRefactor::Reset() {
   camera_id_to_camera_map_.clear();
@@ -46,19 +48,19 @@ void FullBundleAdjustmentSolverRefactor::Reset() {
 
   is_parameter_finalized_ = false;
 
-  original_pose_to_T_jw_map_.clear();
+  original_pose_to_inverse_optimized_pose_map_.clear();
   fixed_original_pose_set_.clear();
-  original_pose_to_j_opt_map_.clear();
-  j_opt_to_original_pose_map_.resize(0);
-  reserved_opt_poses_.resize(0);
+  original_pose_to_pose_index_map_.clear();
+  pose_index_to_original_pose_map_.resize(0);
+  reserved_optimized_poses_.resize(0);
 
-  original_point_to_Xi_map_.clear();
+  original_point_to_optimized_point_map_.clear();
   fixed_original_point_set_.clear();
-  original_point_to_i_opt_map_.clear();
-  i_opt_to_original_point_map_.resize(0);
-  reserved_opt_poses_.resize(0);
+  original_point_to_point_index_map_.clear();
+  point_index_to_original_point_map_.resize(0);
+  reserved_optimized_poses_.resize(0);
 
-  observation_list_.resize(0);
+  point_observation_list_.resize(0);
   // TODO(@)
 }
 
@@ -89,11 +91,11 @@ void FullBundleAdjustmentSolverRefactor::RegisterWorldToBodyPose(
     std::cerr << std::endl;
     return;
   }
-  if (original_pose_to_T_jw_map_.count(original_pose) == 0) {
+  if (original_pose_to_inverse_optimized_pose_map_.count(original_pose) == 0) {
     // std::cout << "Add new pose: " << N_ << ", " << original_poseptr << "\n";
     Pose T_jw = original_pose->inverse();
     T_jw.translation() = T_jw.translation() * kScaler;
-    original_pose_to_T_jw_map_.insert({original_pose, T_jw});
+    original_pose_to_inverse_optimized_pose_map_.insert({original_pose, T_jw});
     ++num_total_poses_;
   }
 }
@@ -105,12 +107,12 @@ void FullBundleAdjustmentSolverRefactor::RegisterWorldPoint(
         "Cannot enroll parameter. (is_parameter_finalized_ == true)\n");
     return;
   }
-  if (original_point_to_Xi_map_.count(original_point) == 0) {
+  if (original_point_to_optimized_point_map_.count(original_point) == 0) {
     // std::cout << "Add new point: " << M_ << ", " << original_pointptr <<
     // "\n";
     Point Xi = *original_point;
     Xi = Xi * kScaler;
-    original_point_to_Xi_map_.insert({original_point, Xi});
+    original_point_to_optimized_point_map_.insert({original_point, Xi});
     ++num_total_points_;
   }
 }
@@ -125,7 +127,8 @@ void FullBundleAdjustmentSolverRefactor::MakePoseFixed(Pose *original_poseptr) {
     std::cerr << "Empty pointer is conveyed. Skip this one.\n";
     return;
   }
-  if (original_pose_to_T_jw_map_.count(original_poseptr) == 0) {
+  if (original_pose_to_inverse_optimized_pose_map_.count(original_poseptr) ==
+      0) {
     throw std::runtime_error("There is no pointer in the BA pose pool.");
   }
   fixed_original_pose_set_.insert(original_poseptr);
@@ -144,59 +147,35 @@ void FullBundleAdjustmentSolverRefactor::MakePointFixed(
     std::cerr << "Empty pointer is conveyed. Skip this one.\n";
     return;
   }
-  if (original_point_to_Xi_map_.count(original_pointptr_to_be_fixed) == 0) {
+  if (original_point_to_optimized_point_map_.count(
+          original_pointptr_to_be_fixed) == 0) {
     throw std::runtime_error("There is no pointer in the BA point pool.");
   }
   fixed_original_point_set_.insert(original_pointptr_to_be_fixed);
   ++num_fixed_points_;
 }
 
-void FullBundleAdjustmentSolverRefactor::AddObservation(
-    const Index camera_index, Pose *related_pose, Point *related_point,
-    const Pixel &pixel) {
-  PointObservation observation;
-  if (camera_id_to_camera_map_.count(camera_index) == 0) {
-    std::cerr << TEXT_RED("Invalid camera index.\n");
-    return;
-  }
-  if (original_pose_to_T_jw_map_.count(related_pose) == 0) {
-    std::cerr << TEXT_RED("Nonexisting pose.\n");
-    return;
-  }
-  if (original_point_to_Xi_map_.count(related_point) == 0) {
-    std::cerr << TEXT_RED("Nonexisting point.\n");
-    return;
-  }
-
-  observation.related_camera_id = camera_index;
-  observation.related_pose = related_pose;
-  observation.related_point = related_point;
-  observation.pixel = pixel * kScaler;
-
-  observation_list_.push_back(observation);
-  ++num_total_observations_;
-}
-
 void FullBundleAdjustmentSolverRefactor::FinalizeParameters() {
   num_optimization_poses_ = 0;
-  for (auto &[original_pose, T_jw] : original_pose_to_T_jw_map_) {
+  for (auto &[original_pose, inverse_optimized_pose] :
+       original_pose_to_inverse_optimized_pose_map_) {
     if (fixed_original_pose_set_.count(original_pose) > 0) continue;
-    j_opt_to_original_pose_map_.push_back(original_pose);
-    original_pose_to_j_opt_map_.insert(
+    pose_index_to_original_pose_map_.push_back(original_pose);
+    original_pose_to_pose_index_map_.insert(
         {original_pose, num_optimization_poses_});
     ++num_optimization_poses_;
   }
-  reserved_opt_poses_.resize(j_opt_to_original_pose_map_.size());
+  reserved_optimized_poses_.resize(pose_index_to_original_pose_map_.size());
 
   num_optimization_points_ = 0;
-  for (auto &[original_point, Xi] : original_point_to_Xi_map_) {
+  for (auto &[original_point, Xi] : original_point_to_optimized_point_map_) {
     if (fixed_original_point_set_.count(original_point) > 0) continue;
-    i_opt_to_original_point_map_.push_back(original_point);
-    original_point_to_i_opt_map_.insert(
+    point_index_to_original_point_map_.push_back(original_point);
+    original_point_to_point_index_map_.insert(
         {original_point, num_optimization_points_});
     ++num_optimization_points_;
   }
-  reserved_opt_points_.resize(i_opt_to_original_point_map_.size());
+  reserved_optimized_points_.resize(point_index_to_original_point_map_.size());
 
   SetProblemSize();
 
@@ -236,7 +215,31 @@ std::string FullBundleAdjustmentSolverRefactor::GetSolverStatistics() const {
   return ss.str();
 }
 
-FullBundleAdjustmentSolverRefactor::~FullBundleAdjustmentSolverRefactor() {}
+void FullBundleAdjustmentSolverRefactor::AddObservation(
+    const Index camera_index, Pose *related_pose, Point *related_point,
+    const Pixel &pixel) {
+  PointObservation observation;
+  if (camera_id_to_camera_map_.count(camera_index) == 0) {
+    std::cerr << TEXT_RED("Invalid camera index.\n");
+    return;
+  }
+  if (original_pose_to_inverse_optimized_pose_map_.count(related_pose) == 0) {
+    std::cerr << TEXT_RED("Nonexisting pose.\n");
+    return;
+  }
+  if (original_point_to_optimized_point_map_.count(related_point) == 0) {
+    std::cerr << TEXT_RED("Nonexisting point.\n");
+    return;
+  }
+
+  observation.related_camera_id = camera_index;
+  observation.related_pose = related_pose;
+  observation.related_point = related_point;
+  observation.pixel = pixel * kScaler;
+
+  point_observation_list_.push_back(observation);
+  ++num_total_observations_;
+}
 
 void FullBundleAdjustmentSolverRefactor::SetProblemSize() {
   // Resize storages.
@@ -301,7 +304,7 @@ void FullBundleAdjustmentSolverRefactor::SetProblemSize() {
 }
 
 void FullBundleAdjustmentSolverRefactor::CheckPoseAndPointConnectivity() {
-  static constexpr int kMinNumObservedPoints = 5;
+  static constexpr int kMinNumObservedPoints = 3;
   static constexpr int kMinNumRelatedPoses = 2;
 
   for (size_t j_opt = 0; j_opt < j_opt_to_all_point_.size(); ++j_opt) {
@@ -317,6 +320,7 @@ void FullBundleAdjustmentSolverRefactor::CheckPoseAndPointConnectivity() {
                                "have insufficient related points.")
                 << std::endl;
   }
+
   for (size_t i_opt = 0; i_opt < i_opt_to_all_pose_.size(); ++i_opt) {
     const auto &related_poses = i_opt_to_all_pose_[i_opt];
     const int num_related_pose = static_cast<int>(related_poses.size());
@@ -373,7 +377,7 @@ double FullBundleAdjustmentSolverRefactor::EvaluateCurrentCost() {
   Index cnt = 0;
   double error_current = 0.0;
   // See observations
-  for (const auto &observation : observation_list_) {
+  for (const auto &observation : point_observation_list_) {
     const auto &camera_index = observation.related_camera_id;
     const auto &pixel = observation.pixel;
     const auto &original_pose = observation.related_pose;
@@ -383,19 +387,19 @@ double FullBundleAdjustmentSolverRefactor::EvaluateCurrentCost() {
     const auto &cam = camera_id_to_camera_map_[camera_index];
     const auto &fx = cam.fx, &fy = cam.fy, &cx = cam.cx, &cy = cam.cy;
 
-    const bool is_reference_cam = (camera_index == 0);
     const bool is_optimize_pose =
-        (original_pose_to_j_opt_map_.count(original_pose) > 0);
+        (original_pose_to_pose_index_map_.count(original_pose) > 0);
     const bool is_optimize_point =
-        (original_point_to_i_opt_map_.count(original_point) > 0);
+        (original_point_to_point_index_map_.count(original_point) > 0);
 
     // Get Tjw (camera pose)
-    const Pose &T_jw = original_pose_to_T_jw_map_[original_pose];
+    const Pose &T_jw =
+        original_pose_to_inverse_optimized_pose_map_[original_pose];
     const Rotation3D &R_jw = T_jw.linear();
     const Translation3D &t_jw = T_jw.translation();
 
     // Get Xi (3D point)
-    const Point &Xi = original_point_to_Xi_map_[original_point];
+    const Point &Xi = original_point_to_optimized_point_map_[original_point];
 
     // Get pij (pixel observation)
     const Pixel &pij = pixel;
@@ -447,28 +451,29 @@ FullBundleAdjustmentSolverRefactor::EvaluateCostChangeByQuadraticModel() {
 
 void FullBundleAdjustmentSolverRefactor::ReserveCurrentParameters() {
   for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
-    const auto &original_pose = j_opt_to_original_pose_map_[j_opt];
-    auto &T_jw = original_pose_to_T_jw_map_[original_pose];
-    reserved_opt_poses_[j_opt] = T_jw;
+    const auto &original_pose = pose_index_to_original_pose_map_[j_opt];
+    auto &T_jw = original_pose_to_inverse_optimized_pose_map_[original_pose];
+    reserved_optimized_poses_[j_opt] = T_jw;
   }
 
   for (Index i_opt = 0; i_opt < num_optimization_points_; ++i_opt) {
-    const auto &original_point = i_opt_to_original_point_map_[i_opt];
-    auto &Xi = original_point_to_Xi_map_[original_point];
-    reserved_opt_points_[i_opt] = Xi;
+    const auto &original_point = point_index_to_original_point_map_[i_opt];
+    auto &Xi = original_point_to_optimized_point_map_[original_point];
+    reserved_optimized_points_[i_opt] = Xi;
   }
 }
+
 void FullBundleAdjustmentSolverRefactor::RevertToReservedParameters() {
   for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
-    const auto &original_pose = j_opt_to_original_pose_map_[j_opt];
-    auto &T_jw = original_pose_to_T_jw_map_[original_pose];
-    T_jw = reserved_opt_poses_[j_opt];
+    const auto &original_pose = pose_index_to_original_pose_map_[j_opt];
+    auto &T_jw = original_pose_to_inverse_optimized_pose_map_[original_pose];
+    T_jw = reserved_optimized_poses_[j_opt];
   }
 
   for (Index i_opt = 0; i_opt < num_optimization_points_; ++i_opt) {
-    const auto &original_point = i_opt_to_original_point_map_[i_opt];
-    auto &Xi = original_point_to_Xi_map_[original_point];
-    Xi = reserved_opt_points_[i_opt];
+    const auto &original_point = point_index_to_original_point_map_[i_opt];
+    auto &Xi = original_point_to_optimized_point_map_[original_point];
+    Xi = reserved_optimized_points_[i_opt];
   }
 }
 
@@ -476,17 +481,19 @@ void FullBundleAdjustmentSolverRefactor::UpdateParameters(
     const std::vector<Vec6> &x_list, const std::vector<Vec3> &y_list) {
   // Update step
   for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
-    const auto &original_pose = j_opt_to_original_pose_map_[j_opt];
-    auto &T_jw = original_pose_to_T_jw_map_[original_pose];
+    const auto &original_pose = pose_index_to_original_pose_map_[j_opt];
+    auto &inverse_optimized_pose =
+        original_pose_to_inverse_optimized_pose_map_[original_pose];
 
     Pose delta_pose;
     se3Exp<SolverNumeric>(x_list[j_opt], delta_pose);
-    T_jw = delta_pose * T_jw;
+    inverse_optimized_pose = delta_pose * inverse_optimized_pose;
   }
   for (Index i_opt = 0; i_opt < num_optimization_points_; ++i_opt) {
-    const auto &original_point = i_opt_to_original_point_map_[i_opt];
-    auto &Xi = original_point_to_Xi_map_[original_point];
-    Xi.noalias() += y_list[i_opt];
+    const auto &original_point = point_index_to_original_point_map_[i_opt];
+    auto &optimized_point =
+        original_point_to_optimized_point_map_[original_point];
+    optimized_point.noalias() += y_list[i_opt];
   }
 }
 
@@ -614,46 +621,46 @@ inline void FullBundleAdjustmentSolverRefactor::
 
 inline void
 FullBundleAdjustmentSolverRefactor::AccumulatePointHessianOnlyUpperTriangle(
-    Mat3x3 &C, Mat3x3 &Rij_t_Rij_upper) {
-  C(0, 0) += Rij_t_Rij_upper(0, 0);
-  C(0, 1) += Rij_t_Rij_upper(0, 1);
-  C(0, 2) += Rij_t_Rij_upper(0, 2);
+    Mat3x3 &C, Mat3x3 &Rij_t_Rij) {
+  C(0, 0) += Rij_t_Rij(0, 0);
+  C(0, 1) += Rij_t_Rij(0, 1);
+  C(0, 2) += Rij_t_Rij(0, 2);
 
-  C(1, 1) += Rij_t_Rij_upper(1, 1);
-  C(1, 2) += Rij_t_Rij_upper(1, 2);
+  C(1, 1) += Rij_t_Rij(1, 1);
+  C(1, 2) += Rij_t_Rij(1, 2);
 
-  C(2, 2) += Rij_t_Rij_upper(2, 2);
+  C(2, 2) += Rij_t_Rij(2, 2);
 }
 
 inline void
 FullBundleAdjustmentSolverRefactor::AccumulatePoseHessianOnlyUpperTriangle(
-    Mat6x6 &A, Mat6x6 &Qij_t_Qij_upper) {
-  A(0, 0) += Qij_t_Qij_upper(0, 0);
-  A(0, 1) += Qij_t_Qij_upper(0, 1);
-  A(0, 2) += Qij_t_Qij_upper(0, 2);
-  A(0, 3) += Qij_t_Qij_upper(0, 3);
-  A(0, 4) += Qij_t_Qij_upper(0, 4);
-  A(0, 5) += Qij_t_Qij_upper(0, 5);
+    Mat6x6 &A, Mat6x6 &Qij_t_Qij) {
+  A(0, 0) += Qij_t_Qij(0, 0);
+  A(0, 1) += Qij_t_Qij(0, 1);
+  A(0, 2) += Qij_t_Qij(0, 2);
+  A(0, 3) += Qij_t_Qij(0, 3);
+  A(0, 4) += Qij_t_Qij(0, 4);
+  A(0, 5) += Qij_t_Qij(0, 5);
 
-  A(1, 1) += Qij_t_Qij_upper(1, 1);
-  A(1, 2) += Qij_t_Qij_upper(1, 2);
-  A(1, 3) += Qij_t_Qij_upper(1, 3);
-  A(1, 4) += Qij_t_Qij_upper(1, 4);
-  A(1, 5) += Qij_t_Qij_upper(1, 5);
+  A(1, 1) += Qij_t_Qij(1, 1);
+  A(1, 2) += Qij_t_Qij(1, 2);
+  A(1, 3) += Qij_t_Qij(1, 3);
+  A(1, 4) += Qij_t_Qij(1, 4);
+  A(1, 5) += Qij_t_Qij(1, 5);
 
-  A(2, 2) += Qij_t_Qij_upper(2, 2);
-  A(2, 3) += Qij_t_Qij_upper(2, 3);
-  A(2, 4) += Qij_t_Qij_upper(2, 4);
-  A(2, 5) += Qij_t_Qij_upper(2, 5);
+  A(2, 2) += Qij_t_Qij(2, 2);
+  A(2, 3) += Qij_t_Qij(2, 3);
+  A(2, 4) += Qij_t_Qij(2, 4);
+  A(2, 5) += Qij_t_Qij(2, 5);
 
-  A(3, 3) += Qij_t_Qij_upper(3, 3);
-  A(3, 4) += Qij_t_Qij_upper(3, 4);
-  A(3, 5) += Qij_t_Qij_upper(3, 5);
+  A(3, 3) += Qij_t_Qij(3, 3);
+  A(3, 4) += Qij_t_Qij(3, 4);
+  A(3, 5) += Qij_t_Qij(3, 5);
 
-  A(4, 4) += Qij_t_Qij_upper(4, 4);
-  A(4, 5) += Qij_t_Qij_upper(4, 5);
+  A(4, 4) += Qij_t_Qij(4, 4);
+  A(4, 5) += Qij_t_Qij(4, 5);
 
-  A(5, 5) += Qij_t_Qij_upper(5, 5);
+  A(5, 5) += Qij_t_Qij(5, 5);
 }
 
 inline void
@@ -739,22 +746,23 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
   j_opt_to_i_opt_.resize(num_optimization_poses_);
   i_opt_to_all_pose_.resize(num_optimization_points_);
   j_opt_to_all_point_.resize(num_optimization_poses_);
-  for (const auto &observation : observation_list_) {
+
+  for (const auto &observation : point_observation_list_) {
     const auto &original_pose = observation.related_pose;
     const auto &original_point = observation.related_point;
     const bool is_optimize_pose =
-        (original_pose_to_j_opt_map_.count(original_pose) > 0);
+        (original_pose_to_pose_index_map_.count(original_pose) > 0);
     const bool is_optimize_point =
-        (original_point_to_i_opt_map_.count(original_point) > 0);
+        (original_point_to_point_index_map_.count(original_point) > 0);
 
     Index i_opt = -1;
     Index j_opt = -1;
     if (is_optimize_point) {
-      i_opt = original_point_to_i_opt_map_.at(original_point);
+      i_opt = original_point_to_point_index_map_.at(original_point);
       i_opt_to_all_pose_[i_opt].insert(original_pose);
     }
     if (is_optimize_pose) {
-      j_opt = original_pose_to_j_opt_map_.at(original_pose);
+      j_opt = original_pose_to_pose_index_map_.at(original_pose);
       j_opt_to_all_point_[j_opt].insert(original_point);
     }
 
@@ -772,13 +780,12 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
   double previous_cost = EvaluateCurrentCost() * kInverseScaler;
   SolverNumeric lambda = initial_lambda;
   for (int iteration = 0; iteration < MAX_ITERATION; ++iteration) {
-    // Reset A, B, Bt, C, Cinv, a, b, x, y...
-    ResetStorageMatrices();
+    ResetStorageMatrices();  // Reset A, B, Bt, C, Cinv, a, b, x, y...
 
     // Iteratively solve. (Levenberg-Marquardt algorithm)
     // Calculate hessian and gradient by observations
     int num_observations = 0;
-    for (const auto &observation : observation_list_) {
+    for (const auto &observation : point_observation_list_) {
       const auto &camera_index = observation.related_camera_id;
       const auto &pixel = observation.pixel;
       const auto &original_pose = observation.related_pose;
@@ -786,21 +793,25 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
 
       // Get intrinsic parameter
       const auto &cam = camera_id_to_camera_map_[camera_index];
-      const auto &fx = cam.fx, &fy = cam.fy, &cx = cam.cx, &cy = cam.cy;
+      const auto fx = cam.fx;
+      const auto fy = cam.fy;
+      const auto cx = cam.cx;
+      const auto cy = cam.cy;
+      const Pose &camera_to_body_pose = cam.camera_to_body_pose;
 
-      const bool is_reference_cam = (camera_index == 0);
       const bool is_optimize_pose =
-          (original_pose_to_j_opt_map_.count(original_pose) > 0);
+          (original_pose_to_pose_index_map_.count(original_pose) > 0);
       const bool is_optimize_point =
-          (original_point_to_i_opt_map_.count(original_point) > 0);
+          (original_point_to_point_index_map_.count(original_point) > 0);
 
       // Get Tjw (camera pose)
-      const Pose &T_jw = original_pose_to_T_jw_map_[original_pose];
+      const Pose &T_jw =
+          original_pose_to_inverse_optimized_pose_map_[original_pose];
       const Rotation3D &R_jw = T_jw.linear();
       const Translation3D &t_jw = T_jw.translation();
 
       // Get Xi (3D point)
-      const Point &Xi = original_point_to_Xi_map_[original_point];
+      const Point &Xi = original_point_to_optimized_point_map_[original_point];
 
       // Get pij (pixel observation)
       const Pixel &pij = pixel;
@@ -808,8 +819,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
       // Warp Xij = Rjw * Xi + tjw
       const Point Xij = R_jw * Xi + t_jw;
 
-      const Pose &T_cj = cam.camera_to_body_pose;
-      const Point Xijc = T_cj * Xij;
+      const Point Xijc = camera_to_body_pose * Xij;
 
       const SolverNumeric &xj = Xijc(0), &yj = Xijc(1), &zj = Xijc(2);
       const SolverNumeric invz = 1.0 / zj;
@@ -869,7 +879,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
         Mat6x6 Qij_t_Qij;
         CalculatePoseHessianOnlyUpperTriangleWithWeight(weight, Qij, Qij_t_Qij);
 
-        j_opt = original_pose_to_j_opt_map_[original_pose];
+        j_opt = original_pose_to_pose_index_map_[original_pose];
         AccumulatePoseHessianOnlyUpperTriangle(A_[j_opt], Qij_t_Qij);
         // A_[j_opt].noalias() += Qij_t_Qij;
         a_[j_opt].noalias() -= (Qij_t * weighted_rij);
@@ -884,7 +894,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
         CalculatePointHessianOnlyUpperTriangleWithWeight(weight, Rij,
                                                          Rij_t_Rij);
 
-        i_opt = original_point_to_i_opt_map_[original_point];
+        i_opt = original_point_to_point_index_map_[original_point];
         AccumulatePointHessianOnlyUpperTriangle(C_[i_opt], Rij_t_Rij);
         // C_[i_opt].noalias() += Rij_t_Rij;
         b_[i_opt].noalias() -= (Rij_t * weighted_rij);
@@ -896,6 +906,9 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
       }
       ++num_observations;
     }  // END for observations
+
+    if (num_observations < 1)
+      throw std::runtime_error("num_observations < 1\n");
 
     // 1) Damping 'A_' diagonal
     const auto lambda_plus_one = 1.0 + lambda;
@@ -926,14 +939,13 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     for (Index i = 0; i < num_optimization_points_; ++i) {
       const auto &j_opt_list = i_opt_to_j_opt_[i];
       for (const Index &j : j_opt_list) {
-        BCinv_[j][i] = B_[j][i] * Cinv_[i];               // FILL STORAGE (6)
-        CinvBt_[i][j] = BCinv_[j][i].transpose().eval();  // FILL STORAGE (11)
-        BCinv_b_[j].noalias() += BCinv_[j][i] * b_[i];    // FILL STORAGE (9)
+        BCinv_[j][i] = B_[j][i] * Cinv_[i];
+        CinvBt_[i][j] = BCinv_[j][i].transpose().eval();
+        BCinv_b_[j].noalias() += BCinv_[j][i] * b_[i];
 
         for (const Index &k : j_opt_list) {
           if (k < j) continue;
-          BCinvBt_[j][k].noalias() +=
-              BCinv_[j][i] * Bt_[i][k];  // FILL STORAGE (7)
+          BCinvBt_[j][k].noalias() += BCinv_[j][i] * Bt_[i][k];
         }
       }  // END j_opt
     }    // END i_opt
@@ -994,7 +1006,8 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
 
     const auto current_cost = EvaluateCurrentCost() * kInverseScaler;
     const auto estimated_cost_change = EvaluateCostChangeByQuadraticModel();
-    const auto rho = (current_cost - previous_cost) / estimated_cost_change;
+    const auto ratio_of_cost_changes =
+        (current_cost - previous_cost) / estimated_cost_change;
 
     struct {
       const double threshold_update = 0.25;
@@ -1002,18 +1015,18 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     } trust_region;
 
     IterationStatus iter_status;
-    if (rho > trust_region.threshold_update) {
+    if (ratio_of_cost_changes > trust_region.threshold_update) {
       iter_status = IterationStatus::UPDATE;
     } else {
       RevertToReservedParameters();
       iter_status = IterationStatus::SKIPPED;
     }
 
-    if (rho > trust_region.threshold_trust_more) {
+    if (ratio_of_cost_changes > trust_region.threshold_trust_more) {
       lambda =
           std::max(1e-10, static_cast<double>(lambda * decrease_ratio_lambda));
       iter_status = IterationStatus::UPDATE_TRUST_MORE;
-    } else if (rho <= trust_region.threshold_update)
+    } else if (ratio_of_cost_changes <= trust_region.threshold_update)
       lambda =
           std::min(100.0, static_cast<double>(lambda * increase_ratio_lambda));
 
@@ -1075,15 +1088,15 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
 
   // Finally, update parameters to the original poses / points
   for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
-    auto &original_pose = j_opt_to_original_pose_map_[j_opt];
-    auto T_jw = original_pose_to_T_jw_map_[original_pose];
+    auto &original_pose = pose_index_to_original_pose_map_[j_opt];
+    auto T_jw = original_pose_to_inverse_optimized_pose_map_[original_pose];
 
     T_jw.translation() *= kInverseScaler;  // recover scale
     *original_pose = T_jw.inverse();
   }
   for (Index i_opt = 0; i_opt < num_optimization_points_; ++i_opt) {
-    auto &original_point = i_opt_to_original_point_map_[i_opt];
-    auto Xi = original_point_to_Xi_map_[original_point];
+    auto &original_point = point_index_to_original_point_map_[i_opt];
+    auto Xi = original_point_to_optimized_point_map_[original_point];
     *original_point = (Xi * kInverseScaler);
   }
 
