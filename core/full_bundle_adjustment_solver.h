@@ -156,10 +156,10 @@ class FullBundleAdjustmentSolver {
  private:  // Solve related
   void CheckPoseAndPointConnectivity();
 
-  void ZeroizeStorageMatrices();
-  double EvaluateCurrentError();
+  void ResetStorageMatrices();
+  double EvaluateCurrentCost();
 
-  double EvaluateErrorChangeByQuadraticModel();
+  double EvaluateCostChangeByQuadraticModel();
 
   void ReserveCurrentParameters();  // reserved_notupdated_opt_poses_,
                                     // reserved_notupdated_opt_points_;
@@ -168,14 +168,10 @@ class FullBundleAdjustmentSolver {
                         const std::vector<_BA_Vec3> &y_list);
 
  private:  // For fast calculations for symmetric matrices
-  inline void CalcRijtRijOnlyUpperTriangle(const _BA_Mat23 &Rij,
-                                           _BA_Mat33 &Rij_t_Rij);
   inline void CalcRijtRijweightOnlyUpperTriangle(const _BA_Numeric weight,
                                                  const _BA_Mat23 &Rij,
                                                  _BA_Mat33 &Rij_t_Rij);
 
-  inline void CalcQijtQijOnlyUpperTriangle(const _BA_Mat26 &Qij,
-                                           _BA_Mat66 &Qij_t_Qij);
   inline void CalcQijtQijweightOnlyUpperTriangle(const _BA_Numeric weight,
                                                  const _BA_Mat26 &Qij,
                                                  _BA_Mat66 &Qij_t_Qij);
@@ -205,10 +201,8 @@ class FullBundleAdjustmentSolver {
  private:
   bool is_parameter_finalized_{false};
 
- private:            // Camera list
-  int num_cameras_;  // # of rigidly fixed cameras (number 0 is the major
-                     // camera)
-  std::unordered_map<_BA_Index, _BA_Camera> camera_index_to_camera_map_;
+ private:  // Camera list
+  std::unordered_map<_BA_Index, _BA_Camera> camera_id_to_camera_map_;
 
   std::unordered_map<_BA_Pose *, _BA_Pose> original_pose_to_T_jw_map_;    // map
   std::unordered_set<_BA_Pose *> fixed_original_pose_set_;                // set

@@ -14,8 +14,7 @@ FullBundleAdjustmentSolver::FullBundleAdjustmentSolver() {
 
   is_parameter_finalized_ = false;
 
-  num_cameras_ = 0;
-  camera_index_to_camera_map_.reserve(10);
+  camera_id_to_camera_map_.reserve(10);
 
   original_pose_to_T_jw_map_.reserve(500);
   fixed_original_pose_set_.reserve(500);
@@ -43,7 +42,7 @@ FullBundleAdjustmentSolver::FullBundleAdjustmentSolver() {
 }
 
 void FullBundleAdjustmentSolver::Reset() {
-  camera_index_to_camera_map_.clear();
+  camera_id_to_camera_map_.clear();
   num_total_poses_ = 0;
   num_total_points_ = 0;
   num_optimization_poses_ = 0;
@@ -54,7 +53,6 @@ void FullBundleAdjustmentSolver::Reset() {
 
   is_parameter_finalized_ = false;
 
-  num_cameras_ = 0;
   original_pose_to_T_jw_map_.clear();
   fixed_original_pose_set_.clear();
   original_pose_to_j_opt_map_.clear();
@@ -79,7 +77,7 @@ void FullBundleAdjustmentSolver::AddCamera(const _BA_Index camera_index,
   camera_scaled.fy *= scaler_;
   camera_scaled.cx *= scaler_;
   camera_scaled.cy *= scaler_;
-  camera_index_to_camera_map_.insert({camera_index, camera_scaled});
+  camera_id_to_camera_map_.insert({camera_index, camera_scaled});
   std::cout << "New camera is added.\n";
   std::cout << "  fx: " << camera_scaled.fx << ", fy: " << camera_scaled.fy
             << ", cx: " << camera_scaled.cx << ", cy: " << camera_scaled.cy
@@ -159,7 +157,7 @@ void FullBundleAdjustmentSolver::AddObservation(const _BA_Index camera_index,
                                                 _BA_Point *related_point,
                                                 const _BA_Pixel &pixel) {
   _BA_Observation observation;
-  if (camera_index_to_camera_map_.count(camera_index) == 0) {
+  if (camera_id_to_camera_map_.count(camera_index) == 0) {
     std::cerr << TEXT_RED("Invalid camera index.\n");
     return;
   }
@@ -210,8 +208,8 @@ void FullBundleAdjustmentSolver::FinalizeParameters() {
 std::string FullBundleAdjustmentSolver::GetSolverStatistics() const {
   std::stringstream ss;
   std::cout << "| Bundle Adjustment Statistics:" << std::endl;
-  std::cout << "| # cameras in rigid body system: " << num_cameras_
-            << std::endl;
+  std::cout << "| # cameras in rigid body system: "
+            << camera_id_to_camera_map_.size() << std::endl;
   std::cout << "|   "
             << TEXT_CYAN("(Note: The reference camera is 'camera_list_[0]'.)")
             << std::endl;
@@ -342,7 +340,7 @@ void FullBundleAdjustmentSolver::CheckPoseAndPointConnectivity() {
   }
 }
 
-void FullBundleAdjustmentSolver::ZeroizeStorageMatrices() {
+void FullBundleAdjustmentSolver::ResetStorageMatrices() {
   // std::cout << "in zeroize \n";
   for (_BA_Index j = 0; j < num_optimization_poses_; ++j) {
     A_[j].setZero();
@@ -380,7 +378,7 @@ void FullBundleAdjustmentSolver::ZeroizeStorageMatrices() {
   // std::cout << "zeroize done\n";
 }
 
-double FullBundleAdjustmentSolver::EvaluateCurrentError() {
+double FullBundleAdjustmentSolver::EvaluateCurrentCost() {
   // Evaluate residual only
   _BA_Index cnt = 0;
   double error_current = 0.0;
@@ -392,7 +390,7 @@ double FullBundleAdjustmentSolver::EvaluateCurrentError() {
     const auto &original_point = observation.related_point;
 
     // Get intrinsic parameter
-    const auto &cam = camera_index_to_camera_map_[camera_index];
+    const auto &cam = camera_id_to_camera_map_[camera_index];
     const auto &fx = cam.fx, &fy = cam.fy, &cx = cam.cx, &cy = cam.cy;
 
     const bool is_reference_cam = (camera_index == 0);
@@ -434,7 +432,7 @@ double FullBundleAdjustmentSolver::EvaluateCurrentError() {
   return error_current;
 }
 
-double FullBundleAdjustmentSolver::EvaluateErrorChangeByQuadraticModel() {
+double FullBundleAdjustmentSolver::EvaluateCostChangeByQuadraticModel() {
   _BA_Numeric estimated_error_change = 0.0;
   for (_BA_Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
     estimated_error_change +=
@@ -502,22 +500,6 @@ void FullBundleAdjustmentSolver::UpdateParameters(
 }
 
 // For fast calculations for symmetric matrices
-inline void FullBundleAdjustmentSolver::CalcRijtRijOnlyUpperTriangle(
-    const _BA_Mat23 &Rij, _BA_Mat33 &Rij_t_Rij) {
-  Rij_t_Rij.setZero();
-
-  // Calculate upper triangle
-  const _BA_Mat23 &a = Rij;
-  Rij_t_Rij(0, 0) = (a(0, 0) * a(0, 0) + a(1, 0) * a(1, 0));
-  Rij_t_Rij(0, 1) = (a(0, 0) * a(0, 1) + a(1, 0) * a(1, 1));
-  Rij_t_Rij(0, 2) = (a(0, 0) * a(0, 2) + a(1, 0) * a(1, 2));
-
-  Rij_t_Rij(1, 1) = (a(0, 1) * a(0, 1) + a(1, 1) * a(1, 1));
-  Rij_t_Rij(1, 2) = (a(0, 1) * a(0, 2) + a(1, 1) * a(1, 2));
-
-  Rij_t_Rij(2, 2) = (a(0, 2) * a(0, 2) + a(1, 2) * a(1, 2));
-}
-
 inline void FullBundleAdjustmentSolver::CalcRijtRijweightOnlyUpperTriangle(
     const _BA_Numeric weight, const _BA_Mat23 &Rij, _BA_Mat33 &Rij_t_Rij) {
   Rij_t_Rij.setZero();
@@ -532,40 +514,6 @@ inline void FullBundleAdjustmentSolver::CalcRijtRijweightOnlyUpperTriangle(
   Rij_t_Rij(1, 2) = weight * (a(0, 1) * a(0, 2) + a(1, 1) * a(1, 2));
 
   Rij_t_Rij(2, 2) = weight * (a(0, 2) * a(0, 2) + a(1, 2) * a(1, 2));
-}
-
-inline void FullBundleAdjustmentSolver::CalcQijtQijOnlyUpperTriangle(
-    const _BA_Mat26 &Qij, _BA_Mat66 &Qij_t_Qij) {
-  Qij_t_Qij.setZero();
-
-  // Calculate upper triangle
-  const _BA_Mat26 &a = Qij;
-  Qij_t_Qij(0, 0) = (a(0, 0) * a(0, 0) + a(1, 0) * a(1, 0));
-  Qij_t_Qij(0, 1) = (a(0, 0) * a(0, 1) + a(1, 0) * a(1, 1));
-  Qij_t_Qij(0, 2) = (a(0, 0) * a(0, 2) + a(1, 0) * a(1, 2));
-  Qij_t_Qij(0, 3) = (a(0, 0) * a(0, 3) + a(1, 0) * a(1, 3));
-  Qij_t_Qij(0, 4) = (a(0, 0) * a(0, 4) + a(1, 0) * a(1, 4));
-  Qij_t_Qij(0, 5) = (a(0, 0) * a(0, 5) + a(1, 0) * a(1, 5));
-
-  Qij_t_Qij(1, 1) = (a(0, 1) * a(0, 1) + a(1, 1) * a(1, 1));
-  Qij_t_Qij(1, 2) = (a(0, 1) * a(0, 2) + a(1, 1) * a(1, 2));
-  Qij_t_Qij(1, 3) = (a(0, 1) * a(0, 3) + a(1, 1) * a(1, 3));
-  Qij_t_Qij(1, 4) = (a(0, 1) * a(0, 4) + a(1, 1) * a(1, 4));
-  Qij_t_Qij(1, 5) = (a(0, 1) * a(0, 5) + a(1, 1) * a(1, 5));
-
-  Qij_t_Qij(2, 2) = (a(0, 2) * a(0, 2) + a(1, 2) * a(1, 2));
-  Qij_t_Qij(2, 3) = (a(0, 2) * a(0, 3) + a(1, 2) * a(1, 3));
-  Qij_t_Qij(2, 4) = (a(0, 2) * a(0, 4) + a(1, 2) * a(1, 4));
-  Qij_t_Qij(2, 5) = (a(0, 2) * a(0, 5) + a(1, 2) * a(1, 5));
-
-  Qij_t_Qij(3, 3) = (a(0, 3) * a(0, 3) + a(1, 3) * a(1, 3));
-  Qij_t_Qij(3, 4) = (a(0, 3) * a(0, 4) + a(1, 3) * a(1, 4));
-  Qij_t_Qij(3, 5) = (a(0, 3) * a(0, 5) + a(1, 3) * a(1, 5));
-
-  Qij_t_Qij(4, 4) = (a(0, 4) * a(0, 4) + a(1, 4) * a(1, 4));
-  Qij_t_Qij(4, 5) = (a(0, 4) * a(0, 5) + a(1, 4) * a(1, 5));
-
-  Qij_t_Qij(5, 5) = (a(0, 5) * a(0, 5) + a(1, 5) * a(1, 5));
 }
 
 inline void FullBundleAdjustmentSolver::CalcQijtQijweightOnlyUpperTriangle(
@@ -756,11 +704,11 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
 
   bool is_converged = false;
   // double error_previous = 1e25;
-  double previous_cost = EvaluateCurrentError();
+  double previous_cost = EvaluateCurrentCost();
   _BA_Numeric lambda = initial_lambda;
   for (int iteration = 0; iteration < MAX_ITERATION; ++iteration) {
     // Reset A, B, Bt, C, Cinv, a, b, x, y...
-    ZeroizeStorageMatrices();
+    ResetStorageMatrices();
 
     // Iteratively solve. (Levenberg-Marquardt algorithm)
     // Calculate hessian and gradient by observations
@@ -772,7 +720,7 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
       const auto &original_point = observation.related_point;
 
       // Get intrinsic parameter
-      const auto &cam = camera_index_to_camera_map_[camera_index];
+      const auto &cam = camera_id_to_camera_map_[camera_index];
       const auto &fx = cam.fx, &fy = cam.fy, &cx = cam.cx, &cy = cam.cy;
 
       const bool is_reference_cam = (camera_index == 0);
@@ -977,8 +925,8 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
     // 2) Evaluate the updated cost (reserved unupdated parameters)
     UpdateParameters(x_, y_);
 
-    const auto current_cost = EvaluateCurrentError();
-    const auto changed_error_by_model = EvaluateErrorChangeByQuadraticModel();
+    const auto current_cost = EvaluateCurrentCost();
+    const auto changed_error_by_model = EvaluateCostChangeByQuadraticModel();
     const auto rho = (current_cost - previous_cost) * inverse_scaler_ /
                      changed_error_by_model;
 

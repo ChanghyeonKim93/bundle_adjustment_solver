@@ -192,7 +192,7 @@ class FullBundleAdjustmentSolverRefactor {
   bool is_parameter_finalized_{false};
 
  private:
-  static constexpr SolverNumeric kTranslationScaler = 0.05;
+  static constexpr SolverNumeric kTranslationScaler = 0.01;
   static constexpr SolverNumeric kInverseTranslationScaler =
       1.0 / kTranslationScaler;
 
