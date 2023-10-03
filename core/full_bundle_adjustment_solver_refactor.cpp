@@ -38,6 +38,7 @@ FullBundleAdjustmentSolverRefactor::~FullBundleAdjustmentSolverRefactor() {}
 
 void FullBundleAdjustmentSolverRefactor::Reset() {
   camera_id_to_camera_map_.clear();
+
   num_total_poses_ = 0;
   num_total_points_ = 0;
   num_optimization_poses_ = 0;
@@ -66,12 +67,18 @@ void FullBundleAdjustmentSolverRefactor::Reset() {
 
 void FullBundleAdjustmentSolverRefactor::RegisterCamera(
     const Index camera_id, const OptimizerCamera &camera) {
+  if (camera_id_to_camera_map_.count(camera_id) > 0) {
+    std::cerr << TEXT_YELLOW("WANNING: existing camera\n");
+    return;
+  }
+
   auto scaled_camera = camera;
-  scaled_camera.camera_to_body_pose.translation() *= kScaler;
-  scaled_camera.fx *= kScaler;
-  scaled_camera.fy *= kScaler;
-  scaled_camera.cx *= kScaler;
-  scaled_camera.cy *= kScaler;
+  scaled_camera.camera_to_body_pose.translation() *= kTranslationScaler;
+  scaled_camera.fx *= kTranslationScaler;
+  scaled_camera.fy *= kTranslationScaler;
+  scaled_camera.cx *= kTranslationScaler;
+  scaled_camera.cy *= kTranslationScaler;
+
   camera_id_to_camera_map_.insert({camera_id, scaled_camera});
   std::cout << "New camera is added.\n";
   std::cout << "  fx: " << scaled_camera.fx << ", fy: " << scaled_camera.fy
@@ -94,7 +101,7 @@ void FullBundleAdjustmentSolverRefactor::RegisterWorldToBodyPose(
   if (original_pose_to_inverse_optimized_pose_map_.count(original_pose) == 0) {
     // std::cout << "Add new pose: " << N_ << ", " << original_poseptr << "\n";
     Pose T_jw = original_pose->inverse();
-    T_jw.translation() = T_jw.translation() * kScaler;
+    T_jw.translation() = T_jw.translation() * kTranslationScaler;
     original_pose_to_inverse_optimized_pose_map_.insert({original_pose, T_jw});
     ++num_total_poses_;
   }
@@ -111,7 +118,7 @@ void FullBundleAdjustmentSolverRefactor::RegisterWorldPoint(
     // std::cout << "Add new point: " << M_ << ", " << original_pointptr <<
     // "\n";
     Point Xi = *original_point;
-    Xi = Xi * kScaler;
+    Xi = Xi * kTranslationScaler;
     original_point_to_optimized_point_map_.insert({original_point, Xi});
     ++num_total_points_;
   }
@@ -235,7 +242,7 @@ void FullBundleAdjustmentSolverRefactor::AddObservation(
   observation.related_camera_id = camera_index;
   observation.related_pose = related_pose;
   observation.related_point = related_point;
-  observation.pixel = pixel * kScaler;
+  observation.pixel = pixel * kTranslationScaler;
 
   point_observation_list_.push_back(observation);
   ++num_total_observations_;
@@ -329,7 +336,7 @@ void FullBundleAdjustmentSolverRefactor::CheckPoseAndPointConnectivity() {
     const int num_observed_optimizable_pose =
         static_cast<int>(related_opt_poses.size());
 
-    if (num_related_pose <= kMinNumRelatedPoses)
+    if (num_related_pose < kMinNumRelatedPoses)
       std::cerr << TEXT_YELLOW(std::to_string(i_opt) +
                                "-th point: It might diverge because some "
                                "points have insufficient related poses.")
@@ -510,113 +517,51 @@ inline bool FullBundleAdjustmentSolverRefactor::IsFixedPoint(
 // For fast calculations for symmetric matrices
 inline void
 FullBundleAdjustmentSolverRefactor::CalculatePointHessianOnlyUpperTriangle(
-    const Mat2x3 &Rij, Mat3x3 &Rij_t_Rij) {
+    const SolverNumeric weight, const Mat2x3 &Rij, Mat3x3 &Rij_t_Rij) {
   Rij_t_Rij.setZero();
 
-  // Calculate upper triangle
-  const Mat2x3 &a = Rij;
-  Rij_t_Rij(0, 0) = (a(0, 0) * a(0, 0) + a(1, 0) * a(1, 0));
-  Rij_t_Rij(0, 1) = (a(0, 0) * a(0, 1) + a(1, 0) * a(1, 1));
-  Rij_t_Rij(0, 2) = (a(0, 0) * a(0, 2) + a(1, 0) * a(1, 2));
+  Rij_t_Rij(0, 0) = weight * (Rij(0, 0) * Rij(0, 0) + Rij(1, 0) * Rij(1, 0));
+  Rij_t_Rij(0, 1) = weight * (Rij(0, 0) * Rij(0, 1) + Rij(1, 0) * Rij(1, 1));
+  Rij_t_Rij(0, 2) = weight * (Rij(0, 0) * Rij(0, 2) + Rij(1, 0) * Rij(1, 2));
 
-  Rij_t_Rij(1, 1) = (a(0, 1) * a(0, 1) + a(1, 1) * a(1, 1));
-  Rij_t_Rij(1, 2) = (a(0, 1) * a(0, 2) + a(1, 1) * a(1, 2));
+  Rij_t_Rij(1, 1) = weight * (Rij(0, 1) * Rij(0, 1) + Rij(1, 1) * Rij(1, 1));
+  Rij_t_Rij(1, 2) = weight * (Rij(0, 1) * Rij(0, 2) + Rij(1, 1) * Rij(1, 2));
 
-  Rij_t_Rij(2, 2) = (a(0, 2) * a(0, 2) + a(1, 2) * a(1, 2));
-}
-
-inline void FullBundleAdjustmentSolverRefactor::
-    CalculatePointHessianOnlyUpperTriangleWithWeight(const SolverNumeric weight,
-                                                     const Mat2x3 &Rij,
-                                                     Mat3x3 &Rij_t_Rij) {
-  Rij_t_Rij.setZero();
-
-  // Calculate upper triangle
-  const Mat2x3 &a = Rij;
-  Rij_t_Rij(0, 0) = weight * (a(0, 0) * a(0, 0) + a(1, 0) * a(1, 0));
-  Rij_t_Rij(0, 1) = weight * (a(0, 0) * a(0, 1) + a(1, 0) * a(1, 1));
-  Rij_t_Rij(0, 2) = weight * (a(0, 0) * a(0, 2) + a(1, 0) * a(1, 2));
-
-  Rij_t_Rij(1, 1) = weight * (a(0, 1) * a(0, 1) + a(1, 1) * a(1, 1));
-  Rij_t_Rij(1, 2) = weight * (a(0, 1) * a(0, 2) + a(1, 1) * a(1, 2));
-
-  Rij_t_Rij(2, 2) = weight * (a(0, 2) * a(0, 2) + a(1, 2) * a(1, 2));
+  Rij_t_Rij(2, 2) = weight * (Rij(0, 2) * Rij(0, 2) + Rij(1, 2) * Rij(1, 2));
 }
 
 inline void
 FullBundleAdjustmentSolverRefactor::CalculatePoseHessianOnlyUpperTriangle(
-    const Mat2x6 &Qij, Mat6x6 &Qij_t_Qij) {
+    const SolverNumeric weight, const Mat2x6 &Qij, Mat6x6 &Qij_t_Qij) {
   Qij_t_Qij.setZero();
+  const Mat2x6 &wQij = weight * Qij;
 
-  // Calculate upper triangle
-  const Mat2x6 &a = Qij;
-  Qij_t_Qij(0, 0) = (a(0, 0) * a(0, 0) + a(1, 0) * a(1, 0));
-  Qij_t_Qij(0, 1) = (a(0, 0) * a(0, 1) + a(1, 0) * a(1, 1));
-  Qij_t_Qij(0, 2) = (a(0, 0) * a(0, 2) + a(1, 0) * a(1, 2));
-  Qij_t_Qij(0, 3) = (a(0, 0) * a(0, 3) + a(1, 0) * a(1, 3));
-  Qij_t_Qij(0, 4) = (a(0, 0) * a(0, 4) + a(1, 0) * a(1, 4));
-  Qij_t_Qij(0, 5) = (a(0, 0) * a(0, 5) + a(1, 0) * a(1, 5));
+  Qij_t_Qij(0, 0) = (wQij(0, 0) * Qij(0, 0) + wQij(1, 0) * Qij(1, 0));
+  Qij_t_Qij(0, 1) = (wQij(0, 0) * Qij(0, 1) + wQij(1, 0) * Qij(1, 1));
+  Qij_t_Qij(0, 2) = (wQij(0, 0) * Qij(0, 2) + wQij(1, 0) * Qij(1, 2));
+  Qij_t_Qij(0, 3) = (wQij(0, 0) * Qij(0, 3) + wQij(1, 0) * Qij(1, 3));
+  Qij_t_Qij(0, 4) = (wQij(0, 0) * Qij(0, 4) + wQij(1, 0) * Qij(1, 4));
+  Qij_t_Qij(0, 5) = (wQij(0, 0) * Qij(0, 5) + wQij(1, 0) * Qij(1, 5));
 
-  Qij_t_Qij(1, 1) = (a(0, 1) * a(0, 1) + a(1, 1) * a(1, 1));
-  Qij_t_Qij(1, 2) = (a(0, 1) * a(0, 2) + a(1, 1) * a(1, 2));
-  Qij_t_Qij(1, 3) = (a(0, 1) * a(0, 3) + a(1, 1) * a(1, 3));
-  Qij_t_Qij(1, 4) = (a(0, 1) * a(0, 4) + a(1, 1) * a(1, 4));
-  Qij_t_Qij(1, 5) = (a(0, 1) * a(0, 5) + a(1, 1) * a(1, 5));
+  Qij_t_Qij(1, 1) = (wQij(0, 1) * Qij(0, 1) + wQij(1, 1) * Qij(1, 1));
+  Qij_t_Qij(1, 2) = (wQij(0, 1) * Qij(0, 2) + wQij(1, 1) * Qij(1, 2));
+  Qij_t_Qij(1, 3) = (wQij(0, 1) * Qij(0, 3) + wQij(1, 1) * Qij(1, 3));
+  Qij_t_Qij(1, 4) = (wQij(0, 1) * Qij(0, 4) + wQij(1, 1) * Qij(1, 4));
+  Qij_t_Qij(1, 5) = (wQij(0, 1) * Qij(0, 5) + wQij(1, 1) * Qij(1, 5));
 
-  Qij_t_Qij(2, 2) = (a(0, 2) * a(0, 2) + a(1, 2) * a(1, 2));
-  Qij_t_Qij(2, 3) = (a(0, 2) * a(0, 3) + a(1, 2) * a(1, 3));
-  Qij_t_Qij(2, 4) = (a(0, 2) * a(0, 4) + a(1, 2) * a(1, 4));
-  Qij_t_Qij(2, 5) = (a(0, 2) * a(0, 5) + a(1, 2) * a(1, 5));
+  Qij_t_Qij(2, 2) = (wQij(0, 2) * Qij(0, 2) + wQij(1, 2) * Qij(1, 2));
+  Qij_t_Qij(2, 3) = (wQij(0, 2) * Qij(0, 3) + wQij(1, 2) * Qij(1, 3));
+  Qij_t_Qij(2, 4) = (wQij(0, 2) * Qij(0, 4) + wQij(1, 2) * Qij(1, 4));
+  Qij_t_Qij(2, 5) = (wQij(0, 2) * Qij(0, 5) + wQij(1, 2) * Qij(1, 5));
 
-  Qij_t_Qij(3, 3) = (a(0, 3) * a(0, 3) + a(1, 3) * a(1, 3));
-  Qij_t_Qij(3, 4) = (a(0, 3) * a(0, 4) + a(1, 3) * a(1, 4));
-  Qij_t_Qij(3, 5) = (a(0, 3) * a(0, 5) + a(1, 3) * a(1, 5));
+  Qij_t_Qij(3, 3) = (wQij(0, 3) * Qij(0, 3) + wQij(1, 3) * Qij(1, 3));
+  Qij_t_Qij(3, 4) = (wQij(0, 3) * Qij(0, 4) + wQij(1, 3) * Qij(1, 4));
+  Qij_t_Qij(3, 5) = (wQij(0, 3) * Qij(0, 5) + wQij(1, 3) * Qij(1, 5));
 
-  Qij_t_Qij(4, 4) = (a(0, 4) * a(0, 4) + a(1, 4) * a(1, 4));
-  Qij_t_Qij(4, 5) = (a(0, 4) * a(0, 5) + a(1, 4) * a(1, 5));
+  Qij_t_Qij(4, 4) = (wQij(0, 4) * Qij(0, 4) + wQij(1, 4) * Qij(1, 4));
+  Qij_t_Qij(4, 5) = (wQij(0, 4) * Qij(0, 5) + wQij(1, 4) * Qij(1, 5));
 
-  Qij_t_Qij(5, 5) = (a(0, 5) * a(0, 5) + a(1, 5) * a(1, 5));
-}
-
-inline void FullBundleAdjustmentSolverRefactor::
-    CalculatePoseHessianOnlyUpperTriangleWithWeight(const SolverNumeric weight,
-                                                    const Mat2x6 &Qij,
-                                                    Mat6x6 &Qij_t_Qij) {
-  Qij_t_Qij.setZero();
-
-  // a(0,1) = 0;
-  // a(1,0) = 0;
-
-  // Calculate upper triangle
-  const Mat2x6 &a = Qij;
-  const Mat2x6 wa = weight * Qij;
-
-  Qij_t_Qij(0, 0) = (wa(0, 0) * a(0, 0) + wa(1, 0) * a(1, 0));
-  Qij_t_Qij(0, 1) = (wa(0, 0) * a(0, 1) + wa(1, 0) * a(1, 1));
-  Qij_t_Qij(0, 2) = (wa(0, 0) * a(0, 2) + wa(1, 0) * a(1, 2));
-  Qij_t_Qij(0, 3) = (wa(0, 0) * a(0, 3) + wa(1, 0) * a(1, 3));
-  Qij_t_Qij(0, 4) = (wa(0, 0) * a(0, 4) + wa(1, 0) * a(1, 4));
-  Qij_t_Qij(0, 5) = (wa(0, 0) * a(0, 5) + wa(1, 0) * a(1, 5));
-
-  Qij_t_Qij(1, 1) = (wa(0, 1) * a(0, 1) + wa(1, 1) * a(1, 1));
-  Qij_t_Qij(1, 2) = (wa(0, 1) * a(0, 2) + wa(1, 1) * a(1, 2));
-  Qij_t_Qij(1, 3) = (wa(0, 1) * a(0, 3) + wa(1, 1) * a(1, 3));
-  Qij_t_Qij(1, 4) = (wa(0, 1) * a(0, 4) + wa(1, 1) * a(1, 4));
-  Qij_t_Qij(1, 5) = (wa(0, 1) * a(0, 5) + wa(1, 1) * a(1, 5));
-
-  Qij_t_Qij(2, 2) = (wa(0, 2) * a(0, 2) + wa(1, 2) * a(1, 2));
-  Qij_t_Qij(2, 3) = (wa(0, 2) * a(0, 3) + wa(1, 2) * a(1, 3));
-  Qij_t_Qij(2, 4) = (wa(0, 2) * a(0, 4) + wa(1, 2) * a(1, 4));
-  Qij_t_Qij(2, 5) = (wa(0, 2) * a(0, 5) + wa(1, 2) * a(1, 5));
-
-  Qij_t_Qij(3, 3) = (wa(0, 3) * a(0, 3) + wa(1, 3) * a(1, 3));
-  Qij_t_Qij(3, 4) = (wa(0, 3) * a(0, 4) + wa(1, 3) * a(1, 4));
-  Qij_t_Qij(3, 5) = (wa(0, 3) * a(0, 5) + wa(1, 3) * a(1, 5));
-
-  Qij_t_Qij(4, 4) = (wa(0, 4) * a(0, 4) + wa(1, 4) * a(1, 4));
-  Qij_t_Qij(4, 5) = (wa(0, 4) * a(0, 5) + wa(1, 4) * a(1, 5));
-
-  Qij_t_Qij(5, 5) = (wa(0, 5) * a(0, 5) + wa(1, 5) * a(1, 5));
+  Qij_t_Qij(5, 5) = (wQij(0, 5) * Qij(0, 5) + wQij(1, 5) * Qij(1, 5));
 }
 
 inline void
@@ -775,9 +720,9 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
   // Check connectivity
   CheckPoseAndPointConnectivity();
 
-  bool is_converged = true;
+  bool is_converged = false;
   // double error_previous = 1e25;
-  double previous_cost = EvaluateCurrentCost() * kInverseScaler;
+  double previous_cost = EvaluateCurrentCost();
   SolverNumeric lambda = initial_lambda;
   for (int iteration = 0; iteration < MAX_ITERATION; ++iteration) {
     ResetStorageMatrices();  // Reset A, B, Bt, C, Cinv, a, b, x, y...
@@ -786,54 +731,48 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     // Calculate hessian and gradient by observations
     int num_observations = 0;
     for (const auto &observation : point_observation_list_) {
-      const auto &camera_index = observation.related_camera_id;
-      const auto &pixel = observation.pixel;
+      const auto &camera_id = observation.related_camera_id;
       const auto &original_pose = observation.related_pose;
       const auto &original_point = observation.related_point;
+      const auto &observed_pixel = observation.pixel;
 
       // Get intrinsic parameter
-      const auto &cam = camera_id_to_camera_map_[camera_index];
-      const auto fx = cam.fx;
-      const auto fy = cam.fy;
-      const auto cx = cam.cx;
-      const auto cy = cam.cy;
-      const Pose &camera_to_body_pose = cam.camera_to_body_pose;
+      const auto &camera = camera_id_to_camera_map_[camera_id];
+      const Pose &camera_to_body_pose = camera.camera_to_body_pose;
 
       const bool is_optimize_pose =
           (original_pose_to_pose_index_map_.count(original_pose) > 0);
       const bool is_optimize_point =
           (original_point_to_point_index_map_.count(original_point) > 0);
 
-      // Get Tjw (camera pose)
+      // Get Tjw (body to world pose)
       const Pose &T_jw =
           original_pose_to_inverse_optimized_pose_map_[original_pose];
-      const Rotation3D &R_jw = T_jw.linear();
-      const Translation3D &t_jw = T_jw.translation();
+      const auto &R_jw = T_jw.linear();
+      const auto &t_jw = T_jw.translation();
 
-      // Get Xi (3D point)
+      // Get Xi (world point)
       const Point &Xi = original_point_to_optimized_point_map_[original_point];
 
-      // Get pij (pixel observation)
-      const Pixel &pij = pixel;
-
       // Warp Xij = Rjw * Xi + tjw
-      const Point Xij = R_jw * Xi + t_jw;
-
-      const Point Xijc = camera_to_body_pose * Xij;
+      const Point Xij = R_jw * Xi + t_jw;            // point at body
+      const Point Xijc = camera_to_body_pose * Xij;  // point at camera
 
       const SolverNumeric &xj = Xijc(0), &yj = Xijc(1), &zj = Xijc(2);
       const SolverNumeric invz = 1.0 / zj;
       const SolverNumeric invz2 = invz * invz;
-      const SolverNumeric fxinvz = fx * invz, fyinvz = fy * invz;
-      const SolverNumeric xinvz = xj * invz, yinvz = yj * invz;
-      const SolverNumeric fx_xinvz2 = fxinvz * xinvz,
-                          fy_yinvz2 = fyinvz * yinvz;
+      const SolverNumeric fx_invz = camera.fx * invz;
+      const SolverNumeric fy_invz = camera.fy * invz;
+      const SolverNumeric x_invz = xj * invz, y_invz = yj * invz;
+      const SolverNumeric fx_x_invz2 = fx_invz * x_invz;
+      const SolverNumeric fy_y_invz2 = fy_invz * y_invz;
       // const _BA_Numeric xinvz_yinvz = xinvz * yinvz;
 
       // Calculate rij
-      Pixel ptw;
-      ptw << fx * xinvz + cx, fy * yinvz + cy;
-      Vec2 rij = ptw - pij;
+      Pixel projected_pixel;
+      projected_pixel << camera.fx * x_invz + camera.cx,
+          camera.fy * y_invz + camera.cy;
+      Vec2 rij = projected_pixel - observed_pixel;
 
       // Calculate weight
       const SolverNumeric absrxry = abs(rij.x()) + abs(rij.y());
@@ -844,9 +783,9 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
       Vec2 weighted_rij = weight * rij;
 
       Mat2x3 dpij_dXi;
-      dpij_dXi << fxinvz, 0.0, -fx_xinvz2, 0.0, fyinvz, -fy_yinvz2;
+      dpij_dXi << fx_invz, 0.0, -fx_x_invz2, 0.0, fy_invz, -fy_y_invz2;
 
-      const Rotation3D &R_cj = cam.camera_to_body_pose.linear();
+      const Rotation3D &R_cj = camera.camera_to_body_pose.linear();
       // _BA_Mat23 dpij_dXi_Rcj = dpij_dXi * R_cj;
       Mat2x3 dpij_dXi_Rcj;
       dpij_dXi_Rcj(0, 0) =
@@ -877,11 +816,11 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
         Qij_t = Qij.transpose();
 
         Mat6x6 Qij_t_Qij;
-        CalculatePoseHessianOnlyUpperTriangleWithWeight(weight, Qij, Qij_t_Qij);
+        CalculatePoseHessianOnlyUpperTriangle(weight, Qij, Qij_t_Qij);
 
         j_opt = original_pose_to_pose_index_map_[original_pose];
-        AccumulatePoseHessianOnlyUpperTriangle(A_[j_opt], Qij_t_Qij);
-        // A_[j_opt].noalias() += Qij_t_Qij;
+        AccumulatePoseHessianOnlyUpperTriangle(
+            A_[j_opt], Qij_t_Qij);  // A_[j_opt].noalias() += Qij_t_Qij;
         a_[j_opt].noalias() -= (Qij_t * weighted_rij);
       }
 
@@ -891,12 +830,11 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
         Rij_t = Rij.transpose();
 
         Mat3x3 Rij_t_Rij;
-        CalculatePointHessianOnlyUpperTriangleWithWeight(weight, Rij,
-                                                         Rij_t_Rij);
+        CalculatePointHessianOnlyUpperTriangle(weight, Rij, Rij_t_Rij);
 
         i_opt = original_point_to_point_index_map_[original_point];
-        AccumulatePointHessianOnlyUpperTriangle(C_[i_opt], Rij_t_Rij);
-        // C_[i_opt].noalias() += Rij_t_Rij;
+        AccumulatePointHessianOnlyUpperTriangle(
+            C_[i_opt], Rij_t_Rij);  // C_[i_opt].noalias() += Rij_t_Rij;
         b_[i_opt].noalias() -= (Rij_t * weighted_rij);
 
         if (is_optimize_pose) {
@@ -982,6 +920,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
 
     MatrixDynamic &x_mat = x_mat_;
     x_mat = Am_BCinvBt_mat.ldlt().solve(am_BCinv_b_mat);
+
     idx0 = 0;
     for (Index j = 0; j < num_optimization_poses_; ++j, idx0 += 6)
       x_[j] = x_mat.block<6, 1>(idx0, 0);
@@ -995,40 +934,49 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
       y_[i] = Cinv_b_[i] - CinvBt_x_[i];
     }
 
-    /*
-      Trust region method
-    */
-    // 1) reserve parameters
-    ReserveCurrentParameters();
+    double current_cost = 0.0;
+    IterationStatus iter_status{IterationStatus::UPDATE};
 
-    // 2) Evaluate the updated cost (reserved unupdated parameters)
-    UpdateParameters(x_, y_);
+    // Trust region method
+    if (options.solver_type == SolverType::LEVENBERG_MARQUARDT) {
+      // 1) reserve parameters
+      ReserveCurrentParameters();
 
-    const auto current_cost = EvaluateCurrentCost() * kInverseScaler;
-    const auto estimated_cost_change = EvaluateCostChangeByQuadraticModel();
-    const auto ratio_of_cost_changes =
-        (current_cost - previous_cost) / estimated_cost_change;
+      // 2) Evaluate the updated cost (reserved unupdated parameters)
+      UpdateParameters(x_, y_);
 
-    struct {
-      const double threshold_update = 0.25;
-      const double threshold_trust_more = 0.5;
-    } trust_region;
+      current_cost = EvaluateCurrentCost();
+      const auto estimated_cost_change = EvaluateCostChangeByQuadraticModel();
+      const auto ratio_of_cost_changes = (current_cost - previous_cost) *
+                                         kInverseTranslationScaler /
+                                         estimated_cost_change;
 
-    IterationStatus iter_status;
-    if (ratio_of_cost_changes > trust_region.threshold_update) {
+      struct {
+        const double threshold_update = 0.25;
+        const double threshold_trust_more = 0.5;
+      } trust_region;
+
+      if (ratio_of_cost_changes > trust_region.threshold_update) {
+        iter_status = IterationStatus::UPDATE;
+      } else {
+        RevertToReservedParameters();
+        iter_status = IterationStatus::SKIPPED;
+      }
+
+      if (ratio_of_cost_changes > trust_region.threshold_trust_more) {
+        lambda = std::max(1e-10,
+                          static_cast<double>(lambda * decrease_ratio_lambda));
+        iter_status = IterationStatus::UPDATE_TRUST_MORE;
+      } else if (ratio_of_cost_changes <= trust_region.threshold_update)
+        lambda = std::min(100.0,
+                          static_cast<double>(lambda * increase_ratio_lambda));
+    } else if (options.solver_type == SolverType::GAUSS_NEWTON) {
+      UpdateParameters(x_, y_);
+
+      current_cost = EvaluateCurrentCost();
+
       iter_status = IterationStatus::UPDATE;
-    } else {
-      RevertToReservedParameters();
-      iter_status = IterationStatus::SKIPPED;
     }
-
-    if (ratio_of_cost_changes > trust_region.threshold_trust_more) {
-      lambda =
-          std::max(1e-10, static_cast<double>(lambda * decrease_ratio_lambda));
-      iter_status = IterationStatus::UPDATE_TRUST_MORE;
-    } else if (ratio_of_cost_changes <= trust_region.threshold_update)
-      lambda =
-          std::min(100.0, static_cast<double>(lambda * increase_ratio_lambda));
 
     // Error calculation
     double average_error = current_cost / static_cast<double>(num_observations);
@@ -1041,7 +989,6 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     for (const auto &yi : y_) step_size_point_norm += yi.norm();
     double total_step_size = step_size_point_norm + step_size_pose_norm;
 
-    std::cout << "num_observations:" << num_observations << std::endl;
     const auto average_delta_error =
         cost_change / static_cast<double>(num_observations);
     const auto average_total_step_size =
@@ -1091,13 +1038,13 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     auto &original_pose = pose_index_to_original_pose_map_[j_opt];
     auto T_jw = original_pose_to_inverse_optimized_pose_map_[original_pose];
 
-    T_jw.translation() *= kInverseScaler;  // recover scale
+    T_jw.translation() *= kInverseTranslationScaler;  // recover scale
     *original_pose = T_jw.inverse();
   }
   for (Index i_opt = 0; i_opt < num_optimization_points_; ++i_opt) {
     auto &original_point = point_index_to_original_point_map_[i_opt];
     auto Xi = original_point_to_optimized_point_map_[original_point];
-    *original_point = (Xi * kInverseScaler);
+    *original_point = (Xi * kInverseTranslationScaler);
   }
 
   const double total_time = stopwatch.GetLapTimeFromStart();

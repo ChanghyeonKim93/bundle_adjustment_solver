@@ -334,7 +334,7 @@ void FullBundleAdjustmentSolver::CheckPoseAndPointConnectivity() {
     const int num_observed_optimizable_pose =
         static_cast<int>(related_opt_poses.size());
 
-    if (num_related_pose <= kMinNumRelatedPoses)
+    if (num_related_pose < kMinNumRelatedPoses)
       std::cerr << TEXT_YELLOW(std::to_string(i_opt) +
                                "-th point: It might diverge because some "
                                "points have insufficient related poses.")
@@ -754,9 +754,9 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
   // Check connectivity
   CheckPoseAndPointConnectivity();
 
-  bool is_converged = true;
+  bool is_converged = false;
   // double error_previous = 1e25;
-  double previous_cost = EvaluateCurrentError() * inverse_scaler_;
+  double previous_cost = EvaluateCurrentError();
   _BA_Numeric lambda = initial_lambda;
   for (int iteration = 0; iteration < MAX_ITERATION; ++iteration) {
     // Reset A, B, Bt, C, Cinv, a, b, x, y...
@@ -977,9 +977,10 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
     // 2) Evaluate the updated cost (reserved unupdated parameters)
     UpdateParameters(x_, y_);
 
-    const auto current_cost = EvaluateCurrentError() * inverse_scaler_;
+    const auto current_cost = EvaluateCurrentError();
     const auto changed_error_by_model = EvaluateErrorChangeByQuadraticModel();
-    const auto rho = (current_cost - previous_cost) / changed_error_by_model;
+    const auto rho = (current_cost - previous_cost) * inverse_scaler_ /
+                     changed_error_by_model;
 
     struct {
       const double threshold_update = 0.25;
@@ -1014,7 +1015,6 @@ bool FullBundleAdjustmentSolver::Solve(Options options, Summary *summary) {
     for (const auto &yi : y_) step_size_point_norm += yi.norm();
     double total_step_size = step_size_point_norm + step_size_pose_norm;
 
-    std::cout << "num_observations:" << num_observations << std::endl;
     const auto average_delta_error =
         cost_change / static_cast<double>(num_observations);
     const auto average_total_step_size =

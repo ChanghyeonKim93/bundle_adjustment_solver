@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "core/full_bundle_adjustment_solver.h"
+#include "core/full_bundle_adjustment_solver_refactor.h"
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 #include "opencv4/opencv2/core.hpp"
@@ -77,8 +78,8 @@ std::vector<Point> GenerateWorldPosition() {
 }
 
 void GetStereoInstrinsicAndExtrinsic(
-    visual_navigation::analytic_solver::_BA_Camera &camera_left,
-    visual_navigation::analytic_solver::_BA_Camera &camera_right) {
+    visual_navigation::analytic_solver::OptimizerCamera &camera_left,
+    visual_navigation::analytic_solver::OptimizerCamera &camera_right) {
   Pose left_to_right_pose;
   left_to_right_pose.linear() = Eigen::Matrix<Numeric, 3, 3>::Identity();
   left_to_right_pose.translation().setZero();
@@ -88,13 +89,13 @@ void GetStereoInstrinsicAndExtrinsic(
   camera_left.fy = 525.0f;
   camera_left.cx = 320.0f;
   camera_left.cy = 240.0f;
-  camera_left.pose_this_to_cam0 = Pose::Identity();
+  camera_left.camera_to_body_pose = Pose::Identity();
 
   camera_right.fx = 525.0f;
   camera_right.fy = 525.0f;
   camera_right.cx = 320.0f;
   camera_right.cy = 240.0f;
-  camera_right.pose_this_to_cam0 = left_to_right_pose.inverse();
+  camera_right.camera_to_body_pose = left_to_right_pose.inverse();
 }
 
 int main() {
@@ -115,10 +116,10 @@ int main() {
   std::uniform_real_distribution<float> position_err(
       -pose_translation_error_level, pose_translation_error_level);
 
-  visual_navigation::analytic_solver::_BA_Camera cam_left, cam_right;
+  visual_navigation::analytic_solver::OptimizerCamera cam_left, cam_right;
   GetStereoInstrinsicAndExtrinsic(cam_left, cam_right);
 
-  std::vector<visual_navigation::analytic_solver::_BA_Camera> camera_list;
+  std::vector<visual_navigation::analytic_solver::OptimizerCamera> camera_list;
   camera_list.push_back(cam_left);
   camera_list.push_back(cam_right);
 
@@ -207,7 +208,7 @@ int main() {
       }
 
       const auto right_position =
-          camera_list[1].pose_this_to_cam0 * local_point;
+          camera_list[1].camera_to_body_pose * local_point;
       const float inverse_z_right = 1.0 / right_position(2);
       visual_navigation::analytic_solver::_BA_Pixel pixel_right;
       pixel_right.x() =
@@ -232,15 +233,16 @@ int main() {
   }
 
   // Solve problem
-  visual_navigation::analytic_solver::FullBundleAdjustmentSolver ba_solver;
+  visual_navigation::analytic_solver::FullBundleAdjustmentSolverRefactor
+      ba_solver;
   for (int camera_index = 0; camera_index < camera_list.size(); ++camera_index)
-    ba_solver.AddCamera(camera_index, camera_list[camera_index]);
+    ba_solver.RegisterCamera(camera_index, camera_list[camera_index]);
 
   for (auto &[frame_id, stereoframe] : stereoframe_pool)
-    ba_solver.AddPose(&(stereoframe.pose));
+    ba_solver.RegisterWorldToBodyPose(&(stereoframe.pose));
 
   for (auto &[landmark_id, landmark] : landmark_pool)
-    ba_solver.AddPoint(&(landmark.world_point));
+    ba_solver.RegisterWorldPoint(&(landmark.world_point));
 
   std::vector<int> fixed_pose_list;
   for (int index = 0; index < num_fixed_poses; ++index)
@@ -287,7 +289,9 @@ int main() {
   // }
 
   visual_navigation::analytic_solver::Options options;
-  options.iteration_handle.max_num_iterations = 3000;
+  options.solver_type =
+      visual_navigation::analytic_solver::SolverType::LEVENBERG_MARQUARDT;
+  options.iteration_handle.max_num_iterations = 300;
   options.convergence_handle.threshold_cost_change = 1e-6f;
   options.convergence_handle.threshold_step_size = 1e-6f;
   // options.trust_region_handle.initial_lambda = 100.0;

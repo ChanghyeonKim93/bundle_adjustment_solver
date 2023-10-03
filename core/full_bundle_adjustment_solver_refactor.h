@@ -157,15 +157,12 @@ class FullBundleAdjustmentSolverRefactor {
   // Qij: jacobian_matrix_by_pose (2x6)
   // Rij_t_Rij: hessian_matrix_by_world_point (3x3)
   // Qij_t_Qij: hessian_matrix_by_pose (6x6)
-  inline void CalculatePointHessianOnlyUpperTriangle(const Mat2x3 &Rij,
+  inline void CalculatePointHessianOnlyUpperTriangle(const SolverNumeric weight,
+                                                     const Mat2x3 &Rij,
                                                      Mat3x3 &Rij_t_Rij);
-  inline void CalculatePointHessianOnlyUpperTriangleWithWeight(
-      const SolverNumeric weight, const Mat2x3 &Rij, Mat3x3 &Rij_t_Rij);
-
-  inline void CalculatePoseHessianOnlyUpperTriangle(const Mat2x6 &Qij,
+  inline void CalculatePoseHessianOnlyUpperTriangle(const SolverNumeric weight,
+                                                    const Mat2x6 &Qij,
                                                     Mat6x6 &Qij_t_Qij);
-  inline void CalculatePoseHessianOnlyUpperTriangleWithWeight(
-      const SolverNumeric weight, const Mat2x6 &Qij, Mat6x6 &Qij_t_Qij);
 
   inline void AccumulatePointHessianOnlyUpperTriangle(Mat3x3 &C,
                                                       Mat3x3 &Rij_t_Rij_upper);
@@ -195,8 +192,9 @@ class FullBundleAdjustmentSolverRefactor {
   bool is_parameter_finalized_{false};
 
  private:
-  static constexpr SolverNumeric kScaler = 0.05;
-  static constexpr SolverNumeric kInverseScaler = 20.0;
+  static constexpr SolverNumeric kTranslationScaler = 0.05;
+  static constexpr SolverNumeric kInverseTranslationScaler =
+      1.0 / kTranslationScaler;
 
  private:  // Camera list
   std::unordered_map<Index, OptimizerCamera> camera_id_to_camera_map_;

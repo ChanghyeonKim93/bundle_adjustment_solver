@@ -37,3 +37,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME}_test_warp_simd ${Eigen3_LIBRARIES} $
 add_executable(${CMAKE_PROJECT_NAME}_test_compare_ceres_vs_native test/test_compare_ceres_vs_native.cpp ${SRC})
 target_link_libraries(${CMAKE_PROJECT_NAME}_test_compare_ceres_vs_native ${Eigen3_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
+add_executable(${CMAKE_PROJECT_NAME}_test_ba_refactor test/test_ba_refactor.cpp ${SRC})
+target_link_libraries(${CMAKE_PROJECT_NAME}_test_ba_refactor ${Eigen3_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
