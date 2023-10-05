@@ -127,6 +127,7 @@ class FullBundleAdjustmentSolverRefactor {
   void MakePointFixed(Point *original_point);
 
   bool Solve(Options options, Summary *summary = nullptr);
+  bool SolveByGradientDescent(Options options, Summary *summary = nullptr);
 
   std::string GetSolverStatistics() const;
 

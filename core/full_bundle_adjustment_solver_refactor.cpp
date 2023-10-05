@@ -1072,6 +1072,300 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
   return is_success;
 }
 
+bool FullBundleAdjustmentSolverRefactor::SolveByGradientDescent(
+    Options options, Summary *summary) {
+  timer::StopWatch stopwatch(std::string(__func__));
+  const auto &max_iteration = options.iteration_handle.max_num_iterations;
+  const auto &threshold_convergence_delta_error =
+      options.convergence_handle.threshold_cost_change;
+  const auto &threshold_convergence_delta_pose =
+      options.convergence_handle.threshold_step_size;
+  const auto &threshold_huber_loss =
+      options.outlier_handle.threshold_huber_loss;
+  const auto &threshold_outlier_reproj_error =
+      options.outlier_handle.threshold_outlier_rejection;
+
+  const auto &initial_lambda = options.trust_region_handle.initial_lambda;
+  const auto &decrease_ratio_lambda =
+      options.trust_region_handle.decrease_ratio_lambda;
+  const auto &increase_ratio_lambda =
+      options.trust_region_handle.increase_ratio_lambda;
+  if (summary != nullptr) {
+    summary->max_iteration_ = max_iteration;
+    summary->threshold_cost_change_ = threshold_convergence_delta_error;
+    summary->threshold_step_size_ = threshold_convergence_delta_pose;
+    summary->convergence_status_ = true;
+  }
+
+  const auto &MAX_ITERATION = max_iteration;
+  const auto &THRES_HUBER = threshold_huber_loss;  // pixels
+  const auto &THRES_DELTA_XI = threshold_convergence_delta_pose;
+  const auto &THRES_DELTA_ERROR = threshold_convergence_delta_error;
+  const auto &THRES_REPROJ_ERROR = threshold_outlier_reproj_error;  // pixels
+
+  // Start to solve
+  stopwatch.Start();
+
+  FinalizeParameters();
+  GetSolverStatistics();
+
+  if (!is_parameter_finalized_)
+    throw std::runtime_error(
+        TEXT_RED(std::string(__func__) + ": " + "Solver is not finalized."));
+
+  bool is_success = true;
+
+  // Make connectivity map
+  i_opt_to_j_opt_.clear();
+  j_opt_to_i_opt_.clear();
+  i_opt_to_all_pose_.clear();
+  j_opt_to_all_point_.clear();
+  i_opt_to_j_opt_.resize(num_optimization_points_);
+  j_opt_to_i_opt_.resize(num_optimization_poses_);
+  i_opt_to_all_pose_.resize(num_optimization_points_);
+  j_opt_to_all_point_.resize(num_optimization_poses_);
+
+  for (const auto &observation : point_observation_list_) {
+    const auto &original_pose = observation.related_pose;
+    const auto &original_point = observation.related_point;
+    const bool is_optimize_pose =
+        (original_pose_to_pose_index_map_.count(original_pose) > 0);
+    const bool is_optimize_point =
+        (original_point_to_point_index_map_.count(original_point) > 0);
+
+    Index i_opt = -1;
+    Index j_opt = -1;
+    if (is_optimize_point) {
+      i_opt = original_point_to_point_index_map_.at(original_point);
+      i_opt_to_all_pose_[i_opt].insert(original_pose);
+    }
+    if (is_optimize_pose) {
+      j_opt = original_pose_to_pose_index_map_.at(original_pose);
+      j_opt_to_all_point_[j_opt].insert(original_point);
+    }
+
+    if (is_optimize_point && is_optimize_pose) {
+      i_opt_to_j_opt_[i_opt].insert(j_opt);
+      j_opt_to_i_opt_[j_opt].insert(i_opt);
+    }
+  }
+
+  // Check connectivity
+  CheckPoseAndPointConnectivity();
+
+  bool is_converged = false;
+  // double error_previous = 1e25;
+  double previous_cost = EvaluateCurrentCost();
+  SolverNumeric lambda = initial_lambda;
+  for (int iteration = 0; iteration < MAX_ITERATION; ++iteration) {
+    ResetStorageMatrices();  // Reset A, B, Bt, C, Cinv, a, b, x, y...
+
+    // Iteratively solve. (Levenberg-Marquardt algorithm)
+    // Calculate hessian and gradient by observations
+    int num_observations = 0;
+    for (const auto &observation : point_observation_list_) {
+      const auto &camera_id = observation.related_camera_id;
+      const auto &original_pose = observation.related_pose;
+      const auto &original_point = observation.related_point;
+      const auto &observed_pixel = observation.pixel;
+
+      // Get intrinsic parameter
+      const auto &camera = camera_id_to_camera_map_[camera_id];
+      const Pose &camera_to_body_pose = camera.camera_to_body_pose;
+
+      const bool is_optimize_pose =
+          (original_pose_to_pose_index_map_.count(original_pose) > 0);
+      const bool is_optimize_point =
+          (original_point_to_point_index_map_.count(original_point) > 0);
+
+      // Get Tjw (body to world pose)
+      const Pose &T_jw =
+          original_pose_to_inverse_optimized_pose_map_[original_pose];
+      const auto &R_jw = T_jw.linear();
+      const auto &t_jw = T_jw.translation();
+
+      // Get Xi (world point)
+      const Point &Xi = original_point_to_optimized_point_map_[original_point];
+
+      // Warp Xij = Rjw * Xi + tjw
+      const Point &Xij = R_jw * Xi + t_jw;            // point at body
+      const Point &Xijc = camera_to_body_pose * Xij;  // point at camera
+
+      const SolverNumeric xj = Xijc(0);
+      const SolverNumeric yj = Xijc(1);
+      const SolverNumeric zj = Xijc(2);
+      const SolverNumeric invz = 1.0 / zj;
+      const SolverNumeric invz2 = invz * invz;
+      const SolverNumeric fx_invz = camera.fx * invz;
+      const SolverNumeric fy_invz = camera.fy * invz;
+      const SolverNumeric x_invz = xj * invz;
+      const SolverNumeric y_invz = yj * invz;
+      const SolverNumeric fx_x_invz2 = fx_invz * x_invz;
+      const SolverNumeric fy_y_invz2 = fy_invz * y_invz;
+      // const _BA_Numeric xinvz_yinvz = xinvz * yinvz;
+
+      // Calculate rij
+      Pixel projected_pixel;
+      projected_pixel << camera.fx * x_invz + camera.cx,
+          camera.fy * y_invz + camera.cy;
+      Vec2 rij = projected_pixel - observed_pixel;
+
+      // Calculate weight
+      const SolverNumeric absrxry = abs(rij.x()) + abs(rij.y());
+      // r_prev[cnt] = absrxry;
+      SolverNumeric weight =
+          (absrxry > THRES_HUBER) ? (THRES_HUBER / absrxry) : 1.0f;
+
+      Vec2 weighted_rij = weight * rij;
+
+      Mat2x3 dpij_dXi;
+      dpij_dXi << fx_invz, 0.0, -fx_x_invz2, 0.0, fy_invz, -fy_y_invz2;
+
+      const Rotation3D &R_cj = camera.camera_to_body_pose.linear();
+      // _BA_Mat23 dpij_dXi_Rcj = dpij_dXi * R_cj;
+      Mat2x3 dpij_dXi_Rcj;
+      dpij_dXi_Rcj(0, 0) =
+          dpij_dXi(0, 0) * R_cj(0, 0) + dpij_dXi(0, 2) * R_cj(2, 0);
+      dpij_dXi_Rcj(0, 1) =
+          dpij_dXi(0, 0) * R_cj(0, 1) + dpij_dXi(0, 2) * R_cj(2, 1);
+      dpij_dXi_Rcj(0, 2) =
+          dpij_dXi(0, 0) * R_cj(0, 2) + dpij_dXi(0, 2) * R_cj(2, 2);
+      dpij_dXi_Rcj(1, 0) =
+          dpij_dXi(1, 1) * R_cj(1, 0) + dpij_dXi(1, 2) * R_cj(2, 0);
+      dpij_dXi_Rcj(1, 1) =
+          dpij_dXi(1, 1) * R_cj(1, 1) + dpij_dXi(1, 2) * R_cj(2, 1);
+      dpij_dXi_Rcj(1, 2) =
+          dpij_dXi(1, 1) * R_cj(1, 2) + dpij_dXi(1, 2) * R_cj(2, 2);
+
+      Mat2x6 Qij;
+      Mat2x3 Rij;
+      Mat6x2 Qij_t;
+      Mat3x2 Rij_t;
+      Index j_opt = -1;
+      Index i_opt = -1;
+      if (is_optimize_pose)  // Jacobian w.r.t. j-th pose
+      {
+        Mat3x3 m_Xij_skew;
+        m_Xij_skew << 0.0, Xij(2), -Xij(1), -Xij(2), 0.0, Xij(0), Xij(1),
+            -Xij(0), 0.0;
+        Qij << dpij_dXi_Rcj, dpij_dXi_Rcj * m_Xij_skew;
+        Qij_t = Qij.transpose();
+
+        j_opt = original_pose_to_pose_index_map_[original_pose];
+        a_[j_opt].noalias() -= (Qij_t * weighted_rij);
+      }
+
+      if (is_optimize_point)  // Jacobian w.r.t. i-th point
+      {
+        Rij = dpij_dXi_Rcj * R_jw;
+        Rij_t = Rij.transpose();
+
+        i_opt = original_point_to_point_index_map_[original_point];
+        b_[i_opt].noalias() -= (Rij_t * weighted_rij);
+      }
+      ++num_observations;
+    }  // END for observations
+
+    if (num_observations < 1)
+      throw std::runtime_error(
+          TEXT_RED(std::string(__func__) + ": " + "num_observations < 1\n"));
+
+    double current_cost = 0.0;
+    IterationStatus iter_status{IterationStatus::UPDATE};
+
+    constexpr double max_pose_step = 0.001;
+    constexpr double max_point_step = 0.001;
+
+    for (auto &vec : a_)
+      if (vec.norm() > max_pose_step) vec = vec * (max_pose_step / vec.norm());
+    for (auto &vec : b_)
+      if (vec.norm() > max_point_step)
+        vec = vec * (max_point_step / vec.norm());
+
+    UpdateOptimizationParameters(a_, b_);
+
+    current_cost = EvaluateCurrentCost();
+
+    iter_status = IterationStatus::UPDATE;
+
+    // Error calculation
+    double average_error = current_cost / static_cast<double>(num_observations);
+    const auto cost_change = abs(current_cost - previous_cost);
+
+    // Calculate delta_parameter
+    SolverNumeric step_size_pose_norm = 0.01;
+    SolverNumeric step_size_point_norm = 0.01;
+    for (const auto &xj : a_) step_size_pose_norm += xj.norm();
+    for (const auto &yi : b_) step_size_point_norm += yi.norm();
+    double total_step_size = step_size_point_norm + step_size_pose_norm;
+
+    const auto average_delta_error =
+        cost_change / static_cast<double>(num_observations);
+    const auto average_total_step_size =
+        (total_step_size) /
+        static_cast<double>(num_optimization_poses_ + num_optimization_points_);
+    if (average_total_step_size < THRES_DELTA_XI ||
+        cost_change < THRES_DELTA_ERROR) {
+      // Early convergence.
+      is_converged = true;
+    }
+
+    if (iteration >= max_iteration - 1) {
+      is_converged = false;
+    }
+
+    const double time_per_iteration = stopwatch.GetLapTimeFromLatest();
+
+    if (summary != nullptr) {
+      OptimizationInfo optimization_info;
+      optimization_info.cost = current_cost;
+      optimization_info.cost_change = cost_change;
+      optimization_info.average_reprojection_error = average_error;
+
+      optimization_info.abs_step = average_total_step_size;
+      optimization_info.abs_gradient = 0;
+      optimization_info.damping_term = lambda;
+      optimization_info.iter_time = time_per_iteration;
+      optimization_info.iteration_status = iter_status;
+
+      if (optimization_info.iteration_status == IterationStatus::SKIPPED) {
+        optimization_info.cost = previous_cost;
+        optimization_info.cost_change = 0;
+        optimization_info.average_reprojection_error =
+            sqrt(previous_cost / static_cast<double>(num_total_observations_));
+      }
+
+      summary->optimization_info_list_.push_back(optimization_info);
+    }
+
+    previous_cost = current_cost;
+
+    if (is_converged) break;
+  }  // END iteration
+
+  // Finally, update parameters to the original poses / points
+  for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
+    auto &original_pose = pose_index_to_original_pose_map_[j_opt];
+    auto T_jw = original_pose_to_inverse_optimized_pose_map_[original_pose];
+
+    T_jw.translation() *= kInverseTranslationScaler;  // recover scale
+    *original_pose = T_jw.inverse();
+  }
+  for (Index i_opt = 0; i_opt < num_optimization_points_; ++i_opt) {
+    auto &original_point = point_index_to_original_point_map_[i_opt];
+    auto Xi = original_point_to_optimized_point_map_[original_point];
+    *original_point = (Xi * kInverseTranslationScaler);
+  }
+
+  const double total_time = stopwatch.GetLapTimeFromStart();
+  if (summary != nullptr) {
+    summary->convergence_status_ = is_converged;
+    summary->total_time_in_millisecond_ = total_time;
+  }
+
+  return is_success;
+}
+
 template <typename T>
 void FullBundleAdjustmentSolverRefactor::se3Exp(
     const Eigen::Matrix<T, 6, 1> &xi, Eigen::Transform<T, 3, 1> &pose) {
