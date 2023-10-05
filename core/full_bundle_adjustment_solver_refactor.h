@@ -116,7 +116,6 @@ class FullBundleAdjustmentSolverRefactor {
 
  public:
   FullBundleAdjustmentSolverRefactor();  // just reserve the memory
-  ~FullBundleAdjustmentSolverRefactor();
 
   void Reset();
 
@@ -143,10 +142,11 @@ class FullBundleAdjustmentSolverRefactor {
   void ResetStorageMatrices();
   double EvaluateCurrentCost();
   double EvaluateCostChangeByQuadraticModel();
-  void ReserveCurrentParameters();
-  void RevertToReservedParameters();
-  void UpdateParameters(const std::vector<Vec6> &pose_update_list,
-                        const std::vector<Vec3> &point_update_list);
+  void ReserveCurrentOptimizationParameters();
+  void RevertToReservedOptimizationParameters();
+  void UpdateOptimizationParameters(
+      const std::vector<Vec6> &update_of_optimization_pose_parameter_list,
+      const std::vector<Vec3> &update_of_optimization_point_parameter_list);
 
  private:
   inline bool IsFixedPose(Pose *original_pose);
@@ -159,18 +159,16 @@ class FullBundleAdjustmentSolverRefactor {
   // Qij_t_Qij: hessian_matrix_by_pose (6x6)
   inline void CalculatePointHessianOnlyUpperTriangle(const SolverNumeric weight,
                                                      const Mat2x3 &Rij,
-                                                     Mat3x3 &Rij_t_Rij);
+                                                     Mat3x3 *Rij_t_Rij);
   inline void CalculatePoseHessianOnlyUpperTriangle(const SolverNumeric weight,
                                                     const Mat2x6 &Qij,
-                                                    Mat6x6 &Qij_t_Qij);
-
-  inline void AccumulatePointHessianOnlyUpperTriangle(Mat3x3 &C,
-                                                      Mat3x3 &Rij_t_Rij_upper);
-  inline void AccumulatePoseHessianOnlyUpperTriangle(Mat6x6 &A,
-                                                     Mat6x6 &Qij_t_Qij_upper);
-
-  inline void FillLowerTriangleByUpperTriangle(Mat3x3 &C);
-  inline void FillLowerTriangleByUpperTriangle(Mat6x6 &A);
+                                                    Mat6x6 *Qij_t_Qij);
+  inline void AccumulatePointHessianOnlyUpperTriangle(
+      const Mat3x3 &Rij_t_Rij_upper, Mat3x3 *C);
+  inline void AccumulatePoseHessianOnlyUpperTriangle(
+      const Mat6x6 &Qij_t_Qij_upper, Mat6x6 *A);
+  inline void FillLowerTriangleByUpperTriangle(Mat3x3 *C);
+  inline void FillLowerTriangleByUpperTriangle(Mat6x6 *A);
 
  private:
   template <typename T>

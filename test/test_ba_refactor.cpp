@@ -251,7 +251,7 @@ int main() {
     auto &pose = stereoframe_pool[frame_id].pose;
     ba_solver.MakePoseFixed(&pose);
   }
-  ba_solver.MakePointFixed({});
+  // ba_solver.MakePointFixed({});
 
   for (auto &[frame_id, stereoframe] : stereoframe_pool) {
     int camera_index = 0;  // left camera

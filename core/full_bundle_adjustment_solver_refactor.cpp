@@ -1,5 +1,7 @@
 #include "full_bundle_adjustment_solver_refactor.h"
 
+#include <stdexcept>
+
 namespace visual_navigation {
 namespace analytic_solver {
 
@@ -31,10 +33,9 @@ FullBundleAdjustmentSolverRefactor::FullBundleAdjustmentSolverRefactor()
   Bt_.reserve(100000);
   C_.reserve(100000);  // reserve expected # of optimizable landmarks (M_opt)
 
-  std::cerr << "SparseBundleAdjustmentSolver() - initialize.\n";
+  std::cerr << std::string(__func__) + ": " +
+                   "initialization is done in constructor.\n";
 }
-
-FullBundleAdjustmentSolverRefactor::~FullBundleAdjustmentSolverRefactor() {}
 
 void FullBundleAdjustmentSolverRefactor::Reset() {
   camera_id_to_camera_map_.clear();
@@ -68,7 +69,8 @@ void FullBundleAdjustmentSolverRefactor::Reset() {
 void FullBundleAdjustmentSolverRefactor::RegisterCamera(
     const Index camera_id, const OptimizerCamera &camera) {
   if (camera_id_to_camera_map_.count(camera_id) > 0) {
-    std::cerr << TEXT_YELLOW("WANNING: existing camera\n");
+    std::cerr << TEXT_YELLOW(std::string(__func__) + ": " +
+                             "WANNING: existing camera\n");
     return;
   }
 
@@ -80,26 +82,25 @@ void FullBundleAdjustmentSolverRefactor::RegisterCamera(
   scaled_camera.cy *= kTranslationScaler;
 
   camera_id_to_camera_map_.insert({camera_id, scaled_camera});
-  std::cout << "New camera is added.\n";
-  std::cout << "  fx: " << scaled_camera.fx << ", fy: " << scaled_camera.fy
-            << ", cx: " << scaled_camera.cx << ", cy: " << scaled_camera.cy
-            << "\n";
-  std::cout << "  scaled camera_to_body_pose:\n"
-            << scaled_camera.camera_to_body_pose.linear() << "\n"
-            << scaled_camera.camera_to_body_pose.translation().transpose()
-            << "\n";
+
+  std::stringstream ss;
+  ss << "New camera is added.\n";
+  ss << "  fx: " << scaled_camera.fx << ", fy: " << scaled_camera.fy
+     << ", cx: " << scaled_camera.cx << ", cy: " << scaled_camera.cy << "\n";
+  ss << "  scaled camera_to_body_pose:\n"
+     << scaled_camera.camera_to_body_pose.linear() << "\n"
+     << scaled_camera.camera_to_body_pose.translation().transpose() << "\n";
+  std::cerr << ss.str();
 }
 
 void FullBundleAdjustmentSolverRefactor::RegisterWorldToBodyPose(
     Pose *original_pose) {
-  if (is_parameter_finalized_) {
-    std::cerr << TEXT_YELLOW(
-        "Cannot enroll parameter. (is_parameter_finalized_ == true)");
-    std::cerr << std::endl;
-    return;
-  }
+  if (is_parameter_finalized_)
+    throw std::runtime_error(TEXT_RED(
+        std::string(__func__) + ": " +
+        "Cannot enroll parameter. (is_parameter_finalized_ == true)\n"));
+
   if (original_pose_to_inverse_optimized_pose_map_.count(original_pose) == 0) {
-    // std::cout << "Add new pose: " << N_ << ", " << original_poseptr << "\n";
     Pose T_jw = original_pose->inverse();
     T_jw.translation() = T_jw.translation() * kTranslationScaler;
     original_pose_to_inverse_optimized_pose_map_.insert({original_pose, T_jw});
@@ -109,14 +110,12 @@ void FullBundleAdjustmentSolverRefactor::RegisterWorldToBodyPose(
 
 void FullBundleAdjustmentSolverRefactor::RegisterWorldPoint(
     Point *original_point) {
-  if (is_parameter_finalized_) {
-    std::cerr << TEXT_YELLOW(
-        "Cannot enroll parameter. (is_parameter_finalized_ == true)\n");
-    return;
-  }
+  if (is_parameter_finalized_)
+    throw std::runtime_error(TEXT_RED(
+        std::string(__func__) + ": " +
+        "Cannot enroll parameter. (is_parameter_finalized_ == true)\n"));
+
   if (original_point_to_optimized_point_map_.count(original_point) == 0) {
-    // std::cout << "Add new point: " << M_ << ", " << original_pointptr <<
-    // "\n";
     Point Xi = *original_point;
     Xi = Xi * kTranslationScaler;
     original_point_to_optimized_point_map_.insert({original_point, Xi});
@@ -125,39 +124,36 @@ void FullBundleAdjustmentSolverRefactor::RegisterWorldPoint(
 }
 
 void FullBundleAdjustmentSolverRefactor::MakePoseFixed(Pose *original_poseptr) {
-  if (is_parameter_finalized_) {
-    std::cerr << TEXT_YELLOW(
-        "Cannot enroll parameter. (is_parameter_finalized_ == true)\n");
-    return;
-  }
-  if (original_poseptr == nullptr) {
-    std::cerr << "Empty pointer is conveyed. Skip this one.\n";
-    return;
-  }
-  if (original_pose_to_inverse_optimized_pose_map_.count(original_poseptr) ==
-      0) {
+  if (is_parameter_finalized_)
+    throw std::runtime_error(TEXT_RED(
+        std::string(__func__) + ": " +
+        "Cannot enroll parameter. (is_parameter_finalized_ == true)\n"));
+  if (original_poseptr == nullptr)
+    throw std::runtime_error(
+        TEXT_RED(std::string(__func__) + ": " +
+                 "Empty pose pointer is conveyed. Skip this one.\n"));
+  if (original_pose_to_inverse_optimized_pose_map_.count(original_poseptr) == 0)
     throw std::runtime_error("There is no pointer in the BA pose pool.");
-  }
+
   fixed_original_pose_set_.insert(original_poseptr);
   ++num_fixed_poses_;
 }
 
 void FullBundleAdjustmentSolverRefactor::MakePointFixed(
     Point *original_pointptr_to_be_fixed) {
-  if (is_parameter_finalized_) {
-    std::cerr << TEXT_YELLOW(
-        "Cannot enroll parameter. (is_parameter_finalized_ == true)\n");
-    return;
-  }
-
-  if (original_pointptr_to_be_fixed == nullptr) {
-    std::cerr << "Empty pointer is conveyed. Skip this one.\n";
-    return;
-  }
+  if (is_parameter_finalized_)
+    throw std::runtime_error(TEXT_RED(
+        std::string(__func__) +
+        "Cannot enroll parameter. (is_parameter_finalized_ == true)\n"));
+  if (original_pointptr_to_be_fixed == nullptr)
+    throw std::runtime_error(TEXT_RED(std::string(__func__) + ": " +
+                                      "Empty point pointer is conveyed.\n"));
   if (original_point_to_optimized_point_map_.count(
-          original_pointptr_to_be_fixed) == 0) {
-    throw std::runtime_error("There is no pointer in the BA point pool.");
-  }
+          original_pointptr_to_be_fixed) == 0)
+    throw std::runtime_error(
+        TEXT_RED(std::string(__func__) + ": " +
+                 "There is no pointer in the BA point pool."));
+
   fixed_original_point_set_.insert(original_pointptr_to_be_fixed);
   ++num_fixed_points_;
 }
@@ -191,33 +187,30 @@ void FullBundleAdjustmentSolverRefactor::FinalizeParameters() {
 
 std::string FullBundleAdjustmentSolverRefactor::GetSolverStatistics() const {
   std::stringstream ss;
-  std::cout << "| Bundle Adjustment Statistics:" << std::endl;
-  std::cout << "| # cameras in rigid body system: "
-            << camera_id_to_camera_map_.size() << std::endl;
-  std::cout << "|   "
-            << TEXT_CYAN("(Note: The reference camera is 'camera_list_[0]'.)")
-            << std::endl;
-  std::cout << "|             # of total poses: " << num_total_poses_
-            << std::endl;
-  std::cout << "|               - # fix  poses: " << num_fixed_poses_
-            << std::endl;
-  std::cout << "|               - # opt. poses: " << num_optimization_poses_
-            << std::endl;
-  std::cout << "|            # of total points: " << num_total_points_
-            << std::endl;
-  std::cout << "|              - # fix  points: " << num_fixed_points_
-            << std::endl;
-  std::cout << "|              - # opt. points: " << num_optimization_points_
-            << std::endl;
-  std::cout << "|            # of observations: " << num_total_observations_
-            << std::endl;
-  std::cout << "|                Jacobian size: " << 6 * num_total_observations_
-            << " rows x "
-            << 3 * num_optimization_points_ + 6 * num_optimization_poses_
-            << " cols" << std::endl;
-  std::cout << "|                Residual size: " << 2 * num_total_observations_
-            << " rows" << std::endl;
-  std::cout << std::endl;
+  ss << "| Bundle Adjustment Statistics:" << std::endl;
+  ss << "| # cameras in rigid body system: " << camera_id_to_camera_map_.size()
+     << std::endl;
+  ss << "|   "
+     << TEXT_CYAN("(Note: The reference camera is 'camera_list_[0]'.)")
+     << std::endl;
+  ss << "|             # of total poses: " << num_total_poses_ << std::endl;
+  ss << "|               - # fix  poses: " << num_fixed_poses_ << std::endl;
+  ss << "|               - # opt. poses: " << num_optimization_poses_
+     << std::endl;
+  ss << "|            # of total points: " << num_total_points_ << std::endl;
+  ss << "|              - # fix  points: " << num_fixed_points_ << std::endl;
+  ss << "|              - # opt. points: " << num_optimization_points_
+     << std::endl;
+  ss << "|            # of observations: " << num_total_observations_
+     << std::endl;
+  ss << "|                Jacobian size: " << 6 * num_total_observations_
+     << " rows x " << 3 * num_optimization_points_ + 6 * num_optimization_poses_
+     << " cols" << std::endl;
+  ss << "|                Residual size: " << 2 * num_total_observations_
+     << " rows" << std::endl;
+  ss << std::endl;
+
+  std::cerr << ss.str();
 
   return ss.str();
 }
@@ -226,18 +219,15 @@ void FullBundleAdjustmentSolverRefactor::AddObservation(
     const Index camera_index, Pose *related_pose, Point *related_point,
     const Pixel &pixel) {
   PointObservation observation;
-  if (camera_id_to_camera_map_.count(camera_index) == 0) {
-    std::cerr << TEXT_RED("Invalid camera index.\n");
-    return;
-  }
-  if (original_pose_to_inverse_optimized_pose_map_.count(related_pose) == 0) {
-    std::cerr << TEXT_RED("Nonexisting pose.\n");
-    return;
-  }
-  if (original_point_to_optimized_point_map_.count(related_point) == 0) {
-    std::cerr << TEXT_RED("Nonexisting point.\n");
-    return;
-  }
+  if (camera_id_to_camera_map_.count(camera_index) == 0)
+    throw std::runtime_error(
+        TEXT_RED(std::string(__func__) + ": " + "Invalid camera index.\n"));
+  if (original_pose_to_inverse_optimized_pose_map_.count(related_pose) == 0)
+    throw std::runtime_error(
+        TEXT_RED(std::string(__func__) + ": " + "Nonexisting pose.\n"));
+  if (original_point_to_optimized_point_map_.count(related_point) == 0)
+    throw std::runtime_error(
+        TEXT_RED(std::string(__func__) + ": " + "Nonexisting point.\n"));
 
   observation.related_camera_id = camera_index;
   observation.related_pose = related_pose;
@@ -321,11 +311,13 @@ void FullBundleAdjustmentSolverRefactor::CheckPoseAndPointConnectivity() {
     const auto &observed_opt_points = j_opt_to_i_opt_[j_opt];
     const size_t num_observed_optimizable_point = observed_opt_points.size();
 
-    if (num_observed_point < kMinNumObservedPoints)
-      std::cerr << TEXT_YELLOW(std::to_string(j_opt) +
-                               "-th pose: It might diverge because some frames "
-                               "have insufficient related points.")
-                << std::endl;
+    if (num_observed_point < kMinNumObservedPoints) {
+      std::stringstream ss;
+      ss << TEXT_YELLOW(std::to_string(j_opt) +
+                        "-th pose: It might diverge because some frames "
+                        "have insufficient related points.\n");
+      std::cerr << ss.str();
+    }
   }
 
   for (size_t i_opt = 0; i_opt < i_opt_to_all_pose_.size(); ++i_opt) {
@@ -336,16 +328,17 @@ void FullBundleAdjustmentSolverRefactor::CheckPoseAndPointConnectivity() {
     const int num_observed_optimizable_pose =
         static_cast<int>(related_opt_poses.size());
 
-    if (num_related_pose < kMinNumRelatedPoses)
-      std::cerr << TEXT_YELLOW(std::to_string(i_opt) +
-                               "-th point: It might diverge because some "
-                               "points have insufficient related poses.")
-                << std::endl;
+    if (num_related_pose < kMinNumRelatedPoses) {
+      std::stringstream ss;
+      ss << TEXT_YELLOW(std::to_string(i_opt) +
+                        "-th point: It might diverge because some "
+                        "points have insufficient related poses.\n");
+      std::cerr << ss.str();
+    }
   }
 }
 
 void FullBundleAdjustmentSolverRefactor::ResetStorageMatrices() {
-  // std::cout << "in zeroize \n";
   for (Index j = 0; j < num_optimization_poses_; ++j) {
     A_[j].setZero();
     a_[j].setZero();
@@ -456,7 +449,8 @@ FullBundleAdjustmentSolverRefactor::EvaluateCostChangeByQuadraticModel() {
   return -estimated_cost_change;
 }
 
-void FullBundleAdjustmentSolverRefactor::ReserveCurrentParameters() {
+void FullBundleAdjustmentSolverRefactor::
+    ReserveCurrentOptimizationParameters() {
   for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
     const auto &original_pose = pose_index_to_original_pose_map_[j_opt];
     auto &T_jw = original_pose_to_inverse_optimized_pose_map_[original_pose];
@@ -470,7 +464,8 @@ void FullBundleAdjustmentSolverRefactor::ReserveCurrentParameters() {
   }
 }
 
-void FullBundleAdjustmentSolverRefactor::RevertToReservedParameters() {
+void FullBundleAdjustmentSolverRefactor::
+    RevertToReservedOptimizationParameters() {
   for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
     const auto &original_pose = pose_index_to_original_pose_map_[j_opt];
     auto &T_jw = original_pose_to_inverse_optimized_pose_map_[original_pose];
@@ -484,23 +479,26 @@ void FullBundleAdjustmentSolverRefactor::RevertToReservedParameters() {
   }
 }
 
-void FullBundleAdjustmentSolverRefactor::UpdateParameters(
-    const std::vector<Vec6> &x_list, const std::vector<Vec3> &y_list) {
+void FullBundleAdjustmentSolverRefactor::UpdateOptimizationParameters(
+    const std::vector<Vec6> &update_of_optimization_pose_parameter_list,
+    const std::vector<Vec3> &update_of_optimization_point_parameter_list) {
   // Update step
   for (Index j_opt = 0; j_opt < num_optimization_poses_; ++j_opt) {
     const auto &original_pose = pose_index_to_original_pose_map_[j_opt];
-    auto &inverse_optimized_pose =
+    Pose &inverse_optimized_pose =
         original_pose_to_inverse_optimized_pose_map_[original_pose];
 
     Pose delta_pose;
-    se3Exp<SolverNumeric>(x_list[j_opt], delta_pose);
+    se3Exp<SolverNumeric>(update_of_optimization_pose_parameter_list[j_opt],
+                          delta_pose);
     inverse_optimized_pose = delta_pose * inverse_optimized_pose;
   }
   for (Index i_opt = 0; i_opt < num_optimization_points_; ++i_opt) {
     const auto &original_point = point_index_to_original_point_map_[i_opt];
-    auto &optimized_point =
+    Point &optimized_point =
         original_point_to_optimized_point_map_[original_point];
-    optimized_point.noalias() += y_list[i_opt];
+    optimized_point.noalias() +=
+        update_of_optimization_point_parameter_list[i_opt];
   }
 }
 
@@ -517,132 +515,132 @@ inline bool FullBundleAdjustmentSolverRefactor::IsFixedPoint(
 // For fast calculations for symmetric matrices
 inline void
 FullBundleAdjustmentSolverRefactor::CalculatePointHessianOnlyUpperTriangle(
-    const SolverNumeric weight, const Mat2x3 &Rij, Mat3x3 &Rij_t_Rij) {
-  Rij_t_Rij.setZero();
+    const SolverNumeric weight, const Mat2x3 &Rij, Mat3x3 *Rij_t_Rij) {
+  Rij_t_Rij->setZero();
 
-  Rij_t_Rij(0, 0) = weight * (Rij(0, 0) * Rij(0, 0) + Rij(1, 0) * Rij(1, 0));
-  Rij_t_Rij(0, 1) = weight * (Rij(0, 0) * Rij(0, 1) + Rij(1, 0) * Rij(1, 1));
-  Rij_t_Rij(0, 2) = weight * (Rij(0, 0) * Rij(0, 2) + Rij(1, 0) * Rij(1, 2));
+  (*Rij_t_Rij)(0, 0) = weight * (Rij(0, 0) * Rij(0, 0) + Rij(1, 0) * Rij(1, 0));
+  (*Rij_t_Rij)(0, 1) = weight * (Rij(0, 0) * Rij(0, 1) + Rij(1, 0) * Rij(1, 1));
+  (*Rij_t_Rij)(0, 2) = weight * (Rij(0, 0) * Rij(0, 2) + Rij(1, 0) * Rij(1, 2));
 
-  Rij_t_Rij(1, 1) = weight * (Rij(0, 1) * Rij(0, 1) + Rij(1, 1) * Rij(1, 1));
-  Rij_t_Rij(1, 2) = weight * (Rij(0, 1) * Rij(0, 2) + Rij(1, 1) * Rij(1, 2));
+  (*Rij_t_Rij)(1, 1) = weight * (Rij(0, 1) * Rij(0, 1) + Rij(1, 1) * Rij(1, 1));
+  (*Rij_t_Rij)(1, 2) = weight * (Rij(0, 1) * Rij(0, 2) + Rij(1, 1) * Rij(1, 2));
 
-  Rij_t_Rij(2, 2) = weight * (Rij(0, 2) * Rij(0, 2) + Rij(1, 2) * Rij(1, 2));
+  (*Rij_t_Rij)(2, 2) = weight * (Rij(0, 2) * Rij(0, 2) + Rij(1, 2) * Rij(1, 2));
 }
 
 inline void
 FullBundleAdjustmentSolverRefactor::CalculatePoseHessianOnlyUpperTriangle(
-    const SolverNumeric weight, const Mat2x6 &Qij, Mat6x6 &Qij_t_Qij) {
-  Qij_t_Qij.setZero();
+    const SolverNumeric weight, const Mat2x6 &Qij, Mat6x6 *Qij_t_Qij) {
+  Qij_t_Qij->setZero();
   const Mat2x6 &wQij = weight * Qij;
 
-  Qij_t_Qij(0, 0) = (wQij(0, 0) * Qij(0, 0) + wQij(1, 0) * Qij(1, 0));
-  Qij_t_Qij(0, 1) = (wQij(0, 0) * Qij(0, 1) + wQij(1, 0) * Qij(1, 1));
-  Qij_t_Qij(0, 2) = (wQij(0, 0) * Qij(0, 2) + wQij(1, 0) * Qij(1, 2));
-  Qij_t_Qij(0, 3) = (wQij(0, 0) * Qij(0, 3) + wQij(1, 0) * Qij(1, 3));
-  Qij_t_Qij(0, 4) = (wQij(0, 0) * Qij(0, 4) + wQij(1, 0) * Qij(1, 4));
-  Qij_t_Qij(0, 5) = (wQij(0, 0) * Qij(0, 5) + wQij(1, 0) * Qij(1, 5));
+  (*Qij_t_Qij)(0, 0) = (wQij(0, 0) * Qij(0, 0) + wQij(1, 0) * Qij(1, 0));
+  (*Qij_t_Qij)(0, 1) = (wQij(0, 0) * Qij(0, 1) + wQij(1, 0) * Qij(1, 1));
+  (*Qij_t_Qij)(0, 2) = (wQij(0, 0) * Qij(0, 2) + wQij(1, 0) * Qij(1, 2));
+  (*Qij_t_Qij)(0, 3) = (wQij(0, 0) * Qij(0, 3) + wQij(1, 0) * Qij(1, 3));
+  (*Qij_t_Qij)(0, 4) = (wQij(0, 0) * Qij(0, 4) + wQij(1, 0) * Qij(1, 4));
+  (*Qij_t_Qij)(0, 5) = (wQij(0, 0) * Qij(0, 5) + wQij(1, 0) * Qij(1, 5));
 
-  Qij_t_Qij(1, 1) = (wQij(0, 1) * Qij(0, 1) + wQij(1, 1) * Qij(1, 1));
-  Qij_t_Qij(1, 2) = (wQij(0, 1) * Qij(0, 2) + wQij(1, 1) * Qij(1, 2));
-  Qij_t_Qij(1, 3) = (wQij(0, 1) * Qij(0, 3) + wQij(1, 1) * Qij(1, 3));
-  Qij_t_Qij(1, 4) = (wQij(0, 1) * Qij(0, 4) + wQij(1, 1) * Qij(1, 4));
-  Qij_t_Qij(1, 5) = (wQij(0, 1) * Qij(0, 5) + wQij(1, 1) * Qij(1, 5));
+  (*Qij_t_Qij)(1, 1) = (wQij(0, 1) * Qij(0, 1) + wQij(1, 1) * Qij(1, 1));
+  (*Qij_t_Qij)(1, 2) = (wQij(0, 1) * Qij(0, 2) + wQij(1, 1) * Qij(1, 2));
+  (*Qij_t_Qij)(1, 3) = (wQij(0, 1) * Qij(0, 3) + wQij(1, 1) * Qij(1, 3));
+  (*Qij_t_Qij)(1, 4) = (wQij(0, 1) * Qij(0, 4) + wQij(1, 1) * Qij(1, 4));
+  (*Qij_t_Qij)(1, 5) = (wQij(0, 1) * Qij(0, 5) + wQij(1, 1) * Qij(1, 5));
 
-  Qij_t_Qij(2, 2) = (wQij(0, 2) * Qij(0, 2) + wQij(1, 2) * Qij(1, 2));
-  Qij_t_Qij(2, 3) = (wQij(0, 2) * Qij(0, 3) + wQij(1, 2) * Qij(1, 3));
-  Qij_t_Qij(2, 4) = (wQij(0, 2) * Qij(0, 4) + wQij(1, 2) * Qij(1, 4));
-  Qij_t_Qij(2, 5) = (wQij(0, 2) * Qij(0, 5) + wQij(1, 2) * Qij(1, 5));
+  (*Qij_t_Qij)(2, 2) = (wQij(0, 2) * Qij(0, 2) + wQij(1, 2) * Qij(1, 2));
+  (*Qij_t_Qij)(2, 3) = (wQij(0, 2) * Qij(0, 3) + wQij(1, 2) * Qij(1, 3));
+  (*Qij_t_Qij)(2, 4) = (wQij(0, 2) * Qij(0, 4) + wQij(1, 2) * Qij(1, 4));
+  (*Qij_t_Qij)(2, 5) = (wQij(0, 2) * Qij(0, 5) + wQij(1, 2) * Qij(1, 5));
 
-  Qij_t_Qij(3, 3) = (wQij(0, 3) * Qij(0, 3) + wQij(1, 3) * Qij(1, 3));
-  Qij_t_Qij(3, 4) = (wQij(0, 3) * Qij(0, 4) + wQij(1, 3) * Qij(1, 4));
-  Qij_t_Qij(3, 5) = (wQij(0, 3) * Qij(0, 5) + wQij(1, 3) * Qij(1, 5));
+  (*Qij_t_Qij)(3, 3) = (wQij(0, 3) * Qij(0, 3) + wQij(1, 3) * Qij(1, 3));
+  (*Qij_t_Qij)(3, 4) = (wQij(0, 3) * Qij(0, 4) + wQij(1, 3) * Qij(1, 4));
+  (*Qij_t_Qij)(3, 5) = (wQij(0, 3) * Qij(0, 5) + wQij(1, 3) * Qij(1, 5));
 
-  Qij_t_Qij(4, 4) = (wQij(0, 4) * Qij(0, 4) + wQij(1, 4) * Qij(1, 4));
-  Qij_t_Qij(4, 5) = (wQij(0, 4) * Qij(0, 5) + wQij(1, 4) * Qij(1, 5));
+  (*Qij_t_Qij)(4, 4) = (wQij(0, 4) * Qij(0, 4) + wQij(1, 4) * Qij(1, 4));
+  (*Qij_t_Qij)(4, 5) = (wQij(0, 4) * Qij(0, 5) + wQij(1, 4) * Qij(1, 5));
 
-  Qij_t_Qij(5, 5) = (wQij(0, 5) * Qij(0, 5) + wQij(1, 5) * Qij(1, 5));
+  (*Qij_t_Qij)(5, 5) = (wQij(0, 5) * Qij(0, 5) + wQij(1, 5) * Qij(1, 5));
 }
 
 inline void
 FullBundleAdjustmentSolverRefactor::AccumulatePointHessianOnlyUpperTriangle(
-    Mat3x3 &C, Mat3x3 &Rij_t_Rij) {
-  C(0, 0) += Rij_t_Rij(0, 0);
-  C(0, 1) += Rij_t_Rij(0, 1);
-  C(0, 2) += Rij_t_Rij(0, 2);
+    const Mat3x3 &Rij_t_Rij, Mat3x3 *C) {
+  (*C)(0, 0) += Rij_t_Rij(0, 0);
+  (*C)(0, 1) += Rij_t_Rij(0, 1);
+  (*C)(0, 2) += Rij_t_Rij(0, 2);
 
-  C(1, 1) += Rij_t_Rij(1, 1);
-  C(1, 2) += Rij_t_Rij(1, 2);
+  (*C)(1, 1) += Rij_t_Rij(1, 1);
+  (*C)(1, 2) += Rij_t_Rij(1, 2);
 
-  C(2, 2) += Rij_t_Rij(2, 2);
+  (*C)(2, 2) += Rij_t_Rij(2, 2);
 }
 
 inline void
 FullBundleAdjustmentSolverRefactor::AccumulatePoseHessianOnlyUpperTriangle(
-    Mat6x6 &A, Mat6x6 &Qij_t_Qij) {
-  A(0, 0) += Qij_t_Qij(0, 0);
-  A(0, 1) += Qij_t_Qij(0, 1);
-  A(0, 2) += Qij_t_Qij(0, 2);
-  A(0, 3) += Qij_t_Qij(0, 3);
-  A(0, 4) += Qij_t_Qij(0, 4);
-  A(0, 5) += Qij_t_Qij(0, 5);
+    const Mat6x6 &Qij_t_Qij, Mat6x6 *A) {
+  (*A)(0, 0) += Qij_t_Qij(0, 0);
+  (*A)(0, 1) += Qij_t_Qij(0, 1);
+  (*A)(0, 2) += Qij_t_Qij(0, 2);
+  (*A)(0, 3) += Qij_t_Qij(0, 3);
+  (*A)(0, 4) += Qij_t_Qij(0, 4);
+  (*A)(0, 5) += Qij_t_Qij(0, 5);
 
-  A(1, 1) += Qij_t_Qij(1, 1);
-  A(1, 2) += Qij_t_Qij(1, 2);
-  A(1, 3) += Qij_t_Qij(1, 3);
-  A(1, 4) += Qij_t_Qij(1, 4);
-  A(1, 5) += Qij_t_Qij(1, 5);
+  (*A)(1, 1) += Qij_t_Qij(1, 1);
+  (*A)(1, 2) += Qij_t_Qij(1, 2);
+  (*A)(1, 3) += Qij_t_Qij(1, 3);
+  (*A)(1, 4) += Qij_t_Qij(1, 4);
+  (*A)(1, 5) += Qij_t_Qij(1, 5);
 
-  A(2, 2) += Qij_t_Qij(2, 2);
-  A(2, 3) += Qij_t_Qij(2, 3);
-  A(2, 4) += Qij_t_Qij(2, 4);
-  A(2, 5) += Qij_t_Qij(2, 5);
+  (*A)(2, 2) += Qij_t_Qij(2, 2);
+  (*A)(2, 3) += Qij_t_Qij(2, 3);
+  (*A)(2, 4) += Qij_t_Qij(2, 4);
+  (*A)(2, 5) += Qij_t_Qij(2, 5);
 
-  A(3, 3) += Qij_t_Qij(3, 3);
-  A(3, 4) += Qij_t_Qij(3, 4);
-  A(3, 5) += Qij_t_Qij(3, 5);
+  (*A)(3, 3) += Qij_t_Qij(3, 3);
+  (*A)(3, 4) += Qij_t_Qij(3, 4);
+  (*A)(3, 5) += Qij_t_Qij(3, 5);
 
-  A(4, 4) += Qij_t_Qij(4, 4);
-  A(4, 5) += Qij_t_Qij(4, 5);
+  (*A)(4, 4) += Qij_t_Qij(4, 4);
+  (*A)(4, 5) += Qij_t_Qij(4, 5);
 
-  A(5, 5) += Qij_t_Qij(5, 5);
+  (*A)(5, 5) += Qij_t_Qij(5, 5);
 }
 
 inline void
 FullBundleAdjustmentSolverRefactor::FillLowerTriangleByUpperTriangle(
-    Mat3x3 &C) {
-  C(1, 0) = C(0, 1);
-  C(2, 0) = C(0, 2);
-  C(2, 1) = C(1, 2);
+    Mat3x3 *C) {
+  (*C)(1, 0) = (*C)(0, 1);
+  (*C)(2, 0) = (*C)(0, 2);
+  (*C)(2, 1) = (*C)(1, 2);
 }
 
 inline void
 FullBundleAdjustmentSolverRefactor::FillLowerTriangleByUpperTriangle(
-    Mat6x6 &A) {
-  A(1, 0) = A(0, 1);
-  A(2, 0) = A(0, 2);
-  A(3, 0) = A(0, 3);
-  A(4, 0) = A(0, 4);
-  A(5, 0) = A(0, 5);
+    Mat6x6 *A) {
+  (*A)(1, 0) = (*A)(0, 1);
+  (*A)(2, 0) = (*A)(0, 2);
+  (*A)(3, 0) = (*A)(0, 3);
+  (*A)(4, 0) = (*A)(0, 4);
+  (*A)(5, 0) = (*A)(0, 5);
 
-  A(2, 1) = A(1, 2);
-  A(3, 1) = A(1, 3);
-  A(4, 1) = A(1, 4);
-  A(5, 1) = A(1, 5);
+  (*A)(2, 1) = (*A)(1, 2);
+  (*A)(3, 1) = (*A)(1, 3);
+  (*A)(4, 1) = (*A)(1, 4);
+  (*A)(5, 1) = (*A)(1, 5);
 
-  A(3, 2) = A(2, 3);
-  A(4, 2) = A(2, 4);
-  A(5, 2) = A(2, 5);
+  (*A)(3, 2) = (*A)(2, 3);
+  (*A)(4, 2) = (*A)(2, 4);
+  (*A)(5, 2) = (*A)(2, 5);
 
-  A(4, 3) = A(3, 4);
-  A(5, 3) = A(3, 5);
+  (*A)(4, 3) = (*A)(3, 4);
+  (*A)(5, 3) = (*A)(3, 5);
 
-  A(5, 4) = A(4, 5);
+  (*A)(5, 4) = (*A)(4, 5);
 }
 
 bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
                                                Summary *summary) {
-  timer::StopWatch stopwatch("BundleAdjustmentSolver::Solve");
+  timer::StopWatch stopwatch(std::string(__func__));
   const auto &max_iteration = options.iteration_handle.max_num_iterations;
   const auto &threshold_convergence_delta_error =
       options.convergence_handle.threshold_cost_change;
@@ -678,7 +676,8 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
   GetSolverStatistics();
 
   if (!is_parameter_finalized_)
-    throw std::runtime_error("Solver is not finalized.");
+    throw std::runtime_error(
+        TEXT_RED(std::string(__func__) + ": " + "Solver is not finalized."));
 
   bool is_success = true;
 
@@ -755,15 +754,18 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
       const Point &Xi = original_point_to_optimized_point_map_[original_point];
 
       // Warp Xij = Rjw * Xi + tjw
-      const Point Xij = R_jw * Xi + t_jw;            // point at body
-      const Point Xijc = camera_to_body_pose * Xij;  // point at camera
+      const Point &Xij = R_jw * Xi + t_jw;            // point at body
+      const Point &Xijc = camera_to_body_pose * Xij;  // point at camera
 
-      const SolverNumeric &xj = Xijc(0), &yj = Xijc(1), &zj = Xijc(2);
+      const SolverNumeric xj = Xijc(0);
+      const SolverNumeric yj = Xijc(1);
+      const SolverNumeric zj = Xijc(2);
       const SolverNumeric invz = 1.0 / zj;
       const SolverNumeric invz2 = invz * invz;
       const SolverNumeric fx_invz = camera.fx * invz;
       const SolverNumeric fy_invz = camera.fy * invz;
-      const SolverNumeric x_invz = xj * invz, y_invz = yj * invz;
+      const SolverNumeric x_invz = xj * invz;
+      const SolverNumeric y_invz = yj * invz;
       const SolverNumeric fx_x_invz2 = fx_invz * x_invz;
       const SolverNumeric fy_y_invz2 = fy_invz * y_invz;
       // const _BA_Numeric xinvz_yinvz = xinvz * yinvz;
@@ -816,11 +818,11 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
         Qij_t = Qij.transpose();
 
         Mat6x6 Qij_t_Qij;
-        CalculatePoseHessianOnlyUpperTriangle(weight, Qij, Qij_t_Qij);
+        CalculatePoseHessianOnlyUpperTriangle(weight, Qij, &Qij_t_Qij);
 
         j_opt = original_pose_to_pose_index_map_[original_pose];
         AccumulatePoseHessianOnlyUpperTriangle(
-            A_[j_opt], Qij_t_Qij);  // A_[j_opt].noalias() += Qij_t_Qij;
+            Qij_t_Qij, &A_[j_opt]);  // A_[j_opt].noalias() += Qij_t_Qij;
         a_[j_opt].noalias() -= (Qij_t * weighted_rij);
       }
 
@@ -830,11 +832,11 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
         Rij_t = Rij.transpose();
 
         Mat3x3 Rij_t_Rij;
-        CalculatePointHessianOnlyUpperTriangle(weight, Rij, Rij_t_Rij);
+        CalculatePointHessianOnlyUpperTriangle(weight, Rij, &Rij_t_Rij);
 
         i_opt = original_point_to_point_index_map_[original_point];
         AccumulatePointHessianOnlyUpperTriangle(
-            C_[i_opt], Rij_t_Rij);  // C_[i_opt].noalias() += Rij_t_Rij;
+            Rij_t_Rij, &C_[i_opt]);  // C_[i_opt].noalias() += Rij_t_Rij;
         b_[i_opt].noalias() -= (Rij_t * weighted_rij);
 
         if (is_optimize_pose) {
@@ -846,13 +848,14 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     }  // END for observations
 
     if (num_observations < 1)
-      throw std::runtime_error("num_observations < 1\n");
+      throw std::runtime_error(
+          TEXT_RED(std::string(__func__) + ": " + "num_observations < 1\n"));
 
     // 1) Damping 'A_' diagonal
     const auto lambda_plus_one = 1.0 + lambda;
     for (Index j = 0; j < num_optimization_poses_; ++j) {
       Mat6x6 &A_tmp = A_[j];
-      FillLowerTriangleByUpperTriangle(A_tmp);
+      FillLowerTriangleByUpperTriangle(&A_tmp);
       A_tmp(0, 0) *= lambda_plus_one;
       A_tmp(1, 1) *= lambda_plus_one;
       A_tmp(2, 2) *= lambda_plus_one;
@@ -864,7 +867,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     // 2) Damping 'C_' diagonal, and Calculate 'Cinv_' & 'Cinvb_'
     for (Index i = 0; i < num_optimization_points_; ++i) {
       Mat3x3 &C_tmp = C_[i];
-      FillLowerTriangleByUpperTriangle(C_tmp);
+      FillLowerTriangleByUpperTriangle(&C_tmp);
       C_tmp(0, 0) *= lambda_plus_one;
       C_tmp(1, 1) *= lambda_plus_one;
       C_tmp(2, 2) *= lambda_plus_one;
@@ -940,10 +943,10 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
     // Trust region method
     if (options.solver_type == SolverType::LEVENBERG_MARQUARDT) {
       // 1) reserve parameters
-      ReserveCurrentParameters();
+      ReserveCurrentOptimizationParameters();
 
       // 2) Evaluate the updated cost (reserved unupdated parameters)
-      UpdateParameters(x_, y_);
+      UpdateOptimizationParameters(x_, y_);
 
       current_cost = EvaluateCurrentCost();
       const auto estimated_cost_change = EvaluateCostChangeByQuadraticModel();
@@ -959,7 +962,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
       if (ratio_of_cost_changes > trust_region.threshold_update) {
         iter_status = IterationStatus::UPDATE;
       } else {
-        RevertToReservedParameters();
+        RevertToReservedOptimizationParameters();
         iter_status = IterationStatus::SKIPPED;
       }
 
@@ -971,7 +974,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
         lambda = std::min(100.0,
                           static_cast<double>(lambda * increase_ratio_lambda));
     } else if (options.solver_type == SolverType::GAUSS_NEWTON) {
-      UpdateParameters(x_, y_);
+      UpdateOptimizationParameters(x_, y_);
 
       current_cost = EvaluateCurrentCost();
 
@@ -1059,7 +1062,7 @@ bool FullBundleAdjustmentSolverRefactor::Solve(Options options,
   // }
   // else
   // {
-  //   std::cout << "!! WARNING !! poseonly BA yields NAN value!!"
+  //   std::cerr << "!! WARNING !! poseonly BA yields NAN value!!"
   //             << ", pose_21_optimized: \n"
   //             << pose_b2b1_optimized.linear() << " " <<
   //             pose_b2b1_optimized.translation() << "\n";
